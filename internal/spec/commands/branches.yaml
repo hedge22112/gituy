@@ -1,0 +1,165 @@
+# Branching, integrating and in-progress operations.
+
+- id: switch
+  cmd: [switch]
+  summary: Switch to another branch
+  options:
+    - flag: --create
+      desc: Create the branch first
+      group: create
+    - flag: --force-create
+      desc: Create the branch, resetting it if it already exists
+      group: create
+      danger: low
+    - flag: --detach
+      desc: Check out a commit without being on a branch
+    - flag: --discard-changes
+      desc: Throw away local changes that would block the switch
+      danger: high
+  args:
+    - name: branch
+      desc: Branch to switch to (or the new branch's name with --create)
+      source: all_branches
+      required: true
+
+- id: branch-delete
+  cmd: [branch]
+  label: branch --delete
+  summary: Delete a local branch
+  options:
+    - flag: --delete
+      desc: Delete only if it has been merged
+      group: mode
+      default: true
+    - flag: -D
+      desc: Delete even if it has unmerged commits
+      group: mode
+      danger: high
+  args:
+    - name: branch
+      desc: Branch to delete
+      source: branches
+      required: true
+
+- id: branch-list
+  cmd: [branch]
+  summary: List branches
+  options:
+    - flag: --all
+      desc: Include remote-tracking branches
+    - flag: -vv
+      desc: Show each branch's upstream and last commit
+    - flag: --merged
+      desc: Only branches already merged into the current one
+
+- id: merge
+  cmd: [merge]
+  summary: Merge another branch into the current one
+  options:
+    - flag: --ff-only
+      desc: Only fast-forward; stop if a real merge is needed
+      group: ff
+    - flag: --no-ff
+      desc: Always create a merge commit
+      group: ff
+    - flag: --squash
+      desc: Combine the changes into your working tree without committing
+    - flag: --no-commit
+      desc: Merge but stop before committing so you can inspect it
+  args:
+    - name: branch
+      desc: Branch to merge in
+      source: all_branches
+      required: true
+
+- id: merge-continue
+  cmd: [merge]
+  fixed: [--continue]
+  summary: Finish the merge after resolving conflicts
+
+- id: merge-abort
+  cmd: [merge]
+  fixed: [--abort]
+  summary: Give up on the merge and go back to how things were
+  danger: low
+
+- id: rebase
+  cmd: [rebase]
+  summary: Replay your commits on top of another branch
+  danger: low
+  options:
+    - flag: --interactive
+      desc: Edit, reorder, squash or drop commits in your editor
+    - flag: --autostash
+      desc: Stash uncommitted changes first and re-apply them afterwards
+    - flag: --onto
+      desc: Rebase onto this commit instead of the upstream
+      value: newbase
+  args:
+    - name: upstream
+      desc: Branch or commit to rebase onto
+      source: all_branches
+
+- id: rebase-continue
+  cmd: [rebase]
+  fixed: [--continue]
+  summary: Continue the rebase after resolving conflicts
+
+- id: rebase-skip
+  cmd: [rebase]
+  fixed: [--skip]
+  summary: Skip the commit that's conflicting
+  danger: low
+
+- id: rebase-abort
+  cmd: [rebase]
+  fixed: [--abort]
+  summary: Give up on the rebase and go back to how things were
+
+- id: cherry-pick-continue
+  cmd: [cherry-pick]
+  fixed: [--continue]
+  summary: Continue the cherry-pick after resolving conflicts
+
+- id: cherry-pick-abort
+  cmd: [cherry-pick]
+  fixed: [--abort]
+  summary: Give up on the cherry-pick
+
+- id: checkout-side
+  cmd: [checkout]
+  label: checkout --ours/--theirs
+  summary: Resolve a conflict by taking one side's version of a file
+  options:
+    - flag: --ours
+      desc: Keep your version (the branch you were on)
+      group: side
+      default: true
+    - flag: --theirs
+      desc: Take the incoming version
+      group: side
+  args:
+    - name: paths
+      desc: Conflicted files
+      source: conflicted
+      multi: true
+      required: true
+      dashdash: true
+
+- id: log
+  cmd: [log]
+  summary: Show commit history
+  options:
+    - flag: --oneline
+      desc: One line per commit
+    - flag: --graph
+      desc: Draw the branch structure
+    - flag: --all
+      desc: Include every branch, not just the current one
+    - flag: -n
+      desc: Limit the number of commits
+      value: count
+  args:
+    - name: range
+      desc: Commit or range, e.g. main..HEAD or @{u}..
+      source: text

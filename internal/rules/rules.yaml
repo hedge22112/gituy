@@ -1,0 +1,198 @@
+# Suggestion rules. `when` is an expr expression over the repo state:
+#   branch, detached, has_commits, upstream, ahead, behind, staged, unstaged,
+#   untracked, changed, conflicted, op, stash, head_pushed, remotes, remote,
+#   clean
+# Titles and preset strings may use templates ({{.branch}}); "@list" in an
+# arg preset expands to every item of that list. `for_each` makes one
+# suggestion per item of a list, available as {{.item}}.
+
+# --- Conflicts / in-progress operations ---------------------------------
+
+- id: resolve-mark
+  when: op != "" && len(conflicted) > 0
+  for_each: conflicted
+  title: "Mark {{.item}} as resolved (after fixing it)"
+  explain: Staging a conflicted file tells git you've resolved it.
+  command: add
+  preset: { args: { paths: ["{{.item}}"] } }
+  priority: 96
+
+- id: resolve-ours
+  when: op != "" && len(conflicted) > 0
+  title: "Keep one side's version of the conflicted files"
+  explain: |
+    --ours / --theirs pick a whole file from one side. Careful: during a
+    rebase they're swapped. "ours" is the branch you're rebasing onto.
+  command: checkout-side
+  preset: { args: { paths: ["@conflicted"] } }
+  priority: 90
+
+- id: merge-continue
+  when: op == "merge" && len(conflicted) == 0
+  title: "Finish the merge"
+  command: merge-continue
+  priority: 100
+
+- id: merge-abort
+  when: op == "merge"
+  title: "Abort the merge"
+  explain: Puts everything back to how it was before the merge started.
+  command: merge-abort
+  priority: 60
+
+- id: rebase-continue
+  when: op == "rebase" && len(conflicted) == 0
+  title: "Continue the rebase"
+  command: rebase-continue
+  priority: 100
+
+- id: rebase-skip
+  when: op == "rebase" && len(conflicted) > 0
+  title: "Skip this commit"
+  explain: Drops the commit that's conflicting from your branch.
+  command: rebase-skip
+  priority: 55
+
+- id: rebase-abort
+  when: op == "rebase"
+  title: "Abort the rebase"
+  explain: Puts your branch back to how it was before the rebase started.
+  command: rebase-abort
+  priority: 60
+
+- id: cherry-pick-continue
+  when: op == "cherry-pick" && len(conflicted) == 0
+  title: "Continue the cherry-pick"
+  command: cherry-pick-continue
+  priority: 100
+
+- id: cherry-pick-abort
+  when: op == "cherry-pick"
+  title: "Abort the cherry-pick"
+  command: cherry-pick-abort
+  priority: 60
+
+# --- Syncing with the remote --------------------------------------------
+
+- id: pull-ff
+  when: op == "" && upstream != "" && behind > 0 && ahead == 0
+  title: "Pull {{.behind}} new commit(s) from {{.upstream}}"
+  explain: You have no local commits, so this is a simple fast-forward.
+  command: pull
+  preset: { flags: [--ff-only] }
+  priority: 82
+
+- id: pull-rebase
+  when: op == "" && upstream != "" && behind > 0 && ahead > 0
+  title: "Rebase your {{.ahead}} commit(s) onto {{.upstream}}"
+  explain: |
+    Your branch and the remote have both moved. Rebasing replays your
+    commits on top, keeping history linear.
+  command: pull
+  preset: { flags: [--rebase] }
+  priority: 85
+
+- id: pull-merge
+  when: op == "" && upstream != "" && behind > 0 && ahead > 0
+  title: "Merge {{.upstream}} into {{.branch}}"
+  explain: Keeps both histories and creates a merge commit.
+  command: pull
+  preset: { flags: [--no-rebase] }
+  priority: 70
+
+- id: push
+  when: op == "" && upstream != "" && ahead > 0 && behind == 0
+  title: "Push {{.ahead}} commit(s) to {{.upstream}}"
+  command: push
+  priority: 75
+
+- id: push-upstream
+  when: op == "" && upstream == "" && has_commits && !detached && remote != ""
+  title: "Publish {{.branch}} to {{.remote}}"
+  explain: Pushes the branch and remembers it as the upstream.
+  command: push
+  preset:
+    flags: [--set-upstream]
+    args: { remote: ["{{.remote}}"], branch: ["{{.branch}}"] }
+  priority: 65
+
+- id: fetch-all
+  when: op == "" && len(remotes) > 0
+  title: "Fetch all remotes"
+  command: fetch
+  preset: { flags: [--all, --prune] }
+  priority: 10
+
+# --- Local changes ------------------------------------------------------
+
+- id: commit
+  when: op == "" && len(staged) > 0
+  title: "Commit {{len .staged}} staged file(s)"
+  command: commit
+  preset: { flags: [-m] }
+  priority: 78
+
+- id: add-all
+  when: len(changed) > 0 && len(conflicted) == 0
+  title: "Stage all changes ({{len .changed}} file(s))"
+  command: add
+  preset: { flags: [--all] }
+  priority: 60
+
+- id: add-pick
+  when: len(changed) > 0 && len(conflicted) == 0
+  title: "Choose files to stage"
+  command: add
+  priority: 55
+
+- id: unstage
+  when: len(staged) > 0
+  title: "Unstage files (keep the edits)"
+  command: restore
+  preset: { flags: [--staged] }
+  priority: 35
+
+- id: stash
+  when: op == "" && len(changed) + len(staged) > 0
+  title: "Stash your changes for later"
+  command: stash-push
+  preset: { flags: [--include-untracked] }
+  priority: 40
+
+- id: discard
+  when: len(unstaged) > 0 && len(conflicted) == 0
+  title: "Discard changes to files"
+  explain: Your edits to the chosen files are thrown away and can't be recovered.
+  command: restore
+  priority: 30
+
+- id: stash-pop
+  when: op == "" && stash > 0 && clean
+  title: "Re-apply your latest stash ({{.stash}} saved)"
+  command: stash-pop
+  priority: 50
+
+- id: undo-commit
+  when: op == "" && has_commits && !head_pushed && !detached
+  title: "Undo the last commit, keep its changes"
+  explain: Only offered because the commit hasn't been pushed yet.
+  command: reset
+  preset: { flags: [--soft], args: { target: ["HEAD~1"] } }
+  priority: 20
+
+# --- Detached HEAD ------------------------------------------------------
+
+- id: detached-branch
+  when: detached && op == ""
+  title: "Create a branch here (you're not on a branch)"
+  explain: Commits made on a detached HEAD are easy to lose. Give them a branch.
+  command: switch
+  preset: { flags: [--create] }
+  priority: 88
+
+- id: detached-back
+  when: detached && op == ""
+  title: "Go back to the previous branch"
+  command: switch
+  preset: { args: { branch: ["-"] } }
+  priority: 70

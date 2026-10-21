@@ -1,0 +1,155 @@
+package rules
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/hedge22112/gituy/internal/builder"
+	"github.com/hedge22112/gituy/internal/git"
+	"github.com/hedge22112/gituy/internal/spec"
+)
+
+func engine(t *testing.T) *Engine {
+	t.Helper()
+	specs, err := spec.Builtin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := Builtin(specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+func commands(sugs []Suggestion) []string {
+	var out []string
+	for _, s := range sugs {
+		argv, _ := builder.Build(s.Command, s.Selection)
+		out = append(out, strings.Join(argv, " "))
+	}
+	return out
+}
+
+func TestSuggestions(t *testing.T) {
+	e := engine(t)
+	cases := []struct {
+		name  string
+		state git.State
+		first string   // expected top suggestion
+		has   []string // must appear somewhere
+		not   []string // must not appear
+	}{
+		{
+			name:  "merge conflict",
+			state: git.State{Branch: "main", HasCommits: true, Op: git.OpMerge, Conflicted: []string{"a.go", "b.go"}},
+			first: "git add -- a.go",
+			has:   []string{"git add -- b.go", "git checkout --ours -- a.go b.go", "git merge --abort"},
+			not:   []string{"git merge --continue", "git add --all"},
+		},
+		{
+			name:  "merge resolved",
+			state: git.State{Branch: "main", HasCommits: true, Op: git.OpMerge},
+			first: "git merge --continue",
+		},
+		{
+			name:  "rebase resolved",
+			state: git.State{Branch: "main", HasCommits: true, Op: git.OpRebase},
+			first: "git rebase --continue",
+			has:   []string{"git rebase --abort"},
+		},
+		{
+			name:  "diverged",
+			state: git.State{Branch: "main", HasCommits: true, Upstream: "origin/main", Ahead: 2, Behind: 1, Remotes: []string{"origin"}},
+			first: "git pull --rebase",
+			has:   []string{"git pull --no-rebase"},
+			not:   []string{"git push"},
+		},
+		{
+			name:  "behind only",
+			state: git.State{Branch: "main", HasCommits: true, HeadPushed: true, Upstream: "origin/main", Behind: 3, Remotes: []string{"origin"}},
+			first: "git pull --ff-only",
+		},
+		{
+			name:  "ahead only",
+			state: git.State{Branch: "main", HasCommits: true, Upstream: "origin/main", Ahead: 1, Remotes: []string{"origin"}},
+			first: "git push",
+			has:   []string{"git reset --soft HEAD~1"},
+		},
+		{
+			name:  "no upstream prefers origin",
+			state: git.State{Branch: "feat", HasCommits: true, Remotes: []string{"fork", "origin"}},
+			has:   []string{"git push --set-upstream origin feat"},
+		},
+		{
+			name:  "staged and unstaged",
+			state: git.State{Branch: "main", HasCommits: true, HeadPushed: true, Staged: []string{"a"}, Unstaged: []string{"b"}},
+			first: "git commit", // -m without a message yet
+			has:   []string{"git add --all", "git restore --staged", "git stash push --include-untracked"},
+		},
+		{
+			name:  "clean with stash",
+			state: git.State{Branch: "main", HasCommits: true, HeadPushed: true, StashCount: 2},
+			first: "git stash pop",
+		},
+		{
+			name:  "detached",
+			state: git.State{Detached: true, HasCommits: true, HeadPushed: true},
+			first: "git switch --create",
+			has:   []string{"git switch -"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := commands(e.Suggest(c.state))
+			if c.first != "" && (len(got) == 0 || got[0] != c.first) {
+				t.Errorf("first = %q, want %q (all: %q)", first(got), c.first, got)
+			}
+			for _, h := range c.has {
+				if !contains(got, h) {
+					t.Errorf("missing %q in %q", h, got)
+				}
+			}
+			for _, n := range c.not {
+				if contains(got, n) {
+					t.Errorf("unexpected %q in %q", n, got)
+				}
+			}
+		})
+	}
+}
+
+func TestSuggestionsDoNotShareSelections(t *testing.T) {
+	e := engine(t)
+	st := git.State{Op: git.OpMerge, Conflicted: []string{"a", "b"}}
+	sugs := e.Suggest(st)
+	sugs[0].Selection.Args["paths"][0] = "changed"
+	again := e.Suggest(st)
+	if again[0].Selection.Args["paths"][0] != "a" {
+		t.Fatal("suggestions share state between calls")
+	}
+}
+
+func TestLoadRejectsUnknownFlag(t *testing.T) {
+	specs, _ := spec.Builtin()
+	_, err := Load([]byte(`[{id: x, when: "true", title: t, command: push, preset: {flags: [--nope]}}]`), specs)
+	if err == nil {
+		t.Fatal("expected error for unknown flag")
+	}
+}
+
+func first(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	return s[0]
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}

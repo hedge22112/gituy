@@ -1,0 +1,139 @@
+# Commands for looking at, staging, committing and discarding changes.
+
+- id: status
+  cmd: [status]
+  summary: Show what's changed in your working tree
+  options:
+    - flag: --short
+      desc: One line per file instead of the long explanation
+    - flag: --branch
+      desc: Also show the branch and how far it is ahead/behind
+    - flag: --untracked-files=no
+      desc: Hide files git isn't tracking yet
+
+- id: diff
+  cmd: [diff]
+  summary: Show line-by-line changes
+  options:
+    - flag: --staged
+      desc: Show changes that are staged (what the next commit will contain)
+    - flag: --stat
+      desc: Only show a summary of files and how many lines changed
+    - flag: --word-diff
+      desc: Highlight changed words instead of whole lines
+  args:
+    - name: paths
+      desc: Limit to these files
+      source: changed
+      multi: true
+      dashdash: true
+
+- id: add
+  cmd: [add]
+  summary: Stage changes for the next commit
+  options:
+    - flag: --all
+      desc: Stage every change, including deletions and new files
+      group: scope
+    - flag: --update
+      desc: Stage changes to tracked files only (ignores new files)
+      group: scope
+    - flag: --patch
+      desc: Choose hunks to stage interactively
+    - flag: --intent-to-add
+      desc: Record that a new file will be added, without staging its content
+  args:
+    - name: paths
+      desc: Files to stage
+      source: changed
+      multi: true
+      dashdash: true
+
+- id: restore
+  cmd: [restore]
+  summary: Discard changes in the working tree, or unstage files
+  help: |
+    Without --staged, restore throws away your edits to the chosen files and
+    puts back the version from the index. Those edits cannot be recovered.
+  options:
+    - flag: --staged
+      desc: Unstage the files (keep your edits in the working tree)
+    - flag: --worktree
+      desc: Also discard edits in the working tree (use with --staged)
+      danger: high
+    - flag: --source
+      desc: Restore from this commit instead of the index
+      value: commit
+    - flag: --patch
+      desc: Choose hunks to restore interactively
+  args:
+    - name: paths
+      desc: Files to restore
+      source: changed
+      multi: true
+      required: true
+      dashdash: true
+
+- id: commit
+  cmd: [commit]
+  summary: Record staged changes as a new commit
+  options:
+    - flag: -m
+      desc: Commit message (leave unset to write it in your editor)
+      value: message
+    - flag: --all
+      desc: Automatically stage modified and deleted tracked files first
+    - flag: --amend
+      desc: Replace the last commit instead of making a new one
+      danger: low
+    - flag: --no-edit
+      desc: Keep the existing message (with --amend)
+    - flag: --no-verify
+      desc: Skip pre-commit and commit-msg hooks
+    - flag: --signoff
+      desc: Add a Signed-off-by trailer
+    - flag: --allow-empty
+      desc: Allow a commit with no changes
+
+- id: reset
+  cmd: [reset]
+  summary: Move the current branch to another commit
+  help: |
+    reset moves your branch pointer. The mode decides what happens to the
+    changes between where you were and where you're going.
+  options:
+    - flag: --soft
+      desc: Keep the changes, staged
+      group: mode
+    - flag: --mixed
+      desc: Keep the changes, unstaged (git's default)
+      group: mode
+    - flag: --hard
+      desc: DISCARD all changes in the index and working tree
+      group: mode
+      danger: high
+    - flag: --keep
+      desc: Like --hard, but refuse if it would lose uncommitted changes
+      group: mode
+  args:
+    - name: target
+      desc: Commit to move to (default HEAD)
+      source: commits
+
+- id: clean
+  cmd: [clean]
+  summary: Delete untracked files
+  danger: high
+  options:
+    - flag: --dry-run
+      desc: Only list what would be deleted
+      group: mode
+    - flag: --force
+      desc: Actually delete the files
+      group: mode
+      danger: high
+    - flag: -d
+      desc: Also delete untracked directories
+    - flag: -x
+      desc: Also delete ignored files (build output, node_modules, ...)
+      danger: high

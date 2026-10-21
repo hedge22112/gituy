@@ -1,0 +1,69 @@
+# Commands that talk to remotes.
+
+- id: fetch
+  cmd: [fetch]
+  summary: Download new commits from a remote without changing your branch
+  options:
+    - flag: --all
+      desc: Fetch every remote
+    - flag: --prune
+      desc: Remove local copies of branches deleted on the remote
+    - flag: --tags
+      desc: Also fetch all tags
+  args:
+    - name: remote
+      desc: Remote to fetch from
+      source: remotes
+
+- id: pull
+  cmd: [pull]
+  summary: Fetch from a remote and integrate into the current branch
+  options:
+    - flag: --rebase
+      desc: Replay your local commits on top of upstream (linear history)
+      group: integrate
+    - flag: --no-rebase
+      desc: Merge upstream into your branch (creates a merge commit if needed)
+      group: integrate
+    - flag: --ff-only
+      desc: Only update if no merge or rebase is needed, otherwise stop
+      group: integrate
+    - flag: --autostash
+      desc: Stash uncommitted changes first and re-apply them afterwards
+    - flag: --prune
+      desc: Remove local copies of branches deleted on the remote
+  args:
+    - name: remote
+      desc: Remote to pull from
+      source: remotes
+    - name: branch
+      desc: Branch on the remote
+      source: remote_branches
+
+- id: push
+  cmd: [push]
+  summary: Upload your commits to a remote
+  options:
+    - flag: --set-upstream
+      desc: Remember this remote branch as the upstream for future push/pull
+    - flag: --force-with-lease
+      desc: Overwrite the remote branch, but only if nobody else pushed since you fetched
+      group: force
+      danger: low
+    - flag: --force
+      desc: Overwrite the remote branch unconditionally (can delete others' work)
+      group: force
+      danger: high
+    - flag: --tags
+      desc: Also push all tags
+    - flag: --dry-run
+      desc: Show what would be pushed without pushing
+    - flag: --no-verify
+      desc: Skip the pre-push hook
+  args:
+    - name: remote
+      desc: Remote to push to
+      source: remotes
+    - name: branch
+      desc: Branch to push
+      source: branches

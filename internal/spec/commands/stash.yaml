@@ -1,0 +1,50 @@
+# Stashing work in progress.
+
+- id: stash-push
+  cmd: [stash, push]
+  summary: Put your uncommitted changes aside
+  options:
+    - flag: --include-untracked
+      desc: Also stash files git isn't tracking yet
+    - flag: --staged
+      desc: Only stash what's staged
+    - flag: --keep-index
+      desc: Stash everything but leave staged changes in place
+    - flag: --message
+      desc: A note to help you find this stash later
+      value: message
+  args:
+    - name: paths
+      desc: Only stash these files
+      source: changed
+      multi: true
+      dashdash: true
+
+- id: stash-pop
+  cmd: [stash, pop]
+  summary: Re-apply a stash and remove it from the list
+  args:
+    - name: stash
+      desc: Which stash (default the latest)
+      source: stashes
+
+- id: stash-apply
+  cmd: [stash, apply]
+  summary: Re-apply a stash but keep it in the list
+  args:
+    - name: stash
+      desc: Which stash (default the latest)
+      source: stashes
+
+- id: stash-list
+  cmd: [stash, list]
+  summary: List stashes
+
+- id: stash-drop
+  cmd: [stash, drop]
+  summary: Delete a stash
+  danger: high
+  args:
+    - name: stash
+      desc: Which stash (default the latest)
+      source: stashes
