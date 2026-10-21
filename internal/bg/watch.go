@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,7 +45,7 @@ type watcher struct {
 	max       int    // watch budget, see cost
 	used      int
 	watched   map[string]bool
-	worktree  bool // working tree is being watched
+	worktree  atomic.Bool // working tree is being watched
 }
 
 // kqueue (macOS, BSD) needs a file descriptor for every file in a watched
@@ -57,10 +58,24 @@ func (s *Supervisor) watchLoop(ctx context.Context) {
 		s.Send(WatchMsg{Mode: WatchOff, Reason: reason})
 		return
 	}
-	defer wt.close()
 	s.setWatching(mode == WatchFull)
-	defer s.setWatching(false)
 	s.Send(WatchMsg{Mode: mode, Dirs: len(wt.watched), Reason: reason})
+
+	// New directories are added by a separate goroutine. On Windows,
+	// Watcher.Add waits for fsnotify's reader goroutine, which may itself
+	// be waiting to deliver an event to this loop: calling Add here would
+	// deadlock.
+	newDirs := make(chan string, 1024)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		wt.dirWorker(ctx, newDirs)
+	}()
+	defer func() {
+		wt.close()
+		<-done
+		s.setWatching(false)
+	}()
 
 	var pending <-chan time.Time
 	for {
@@ -74,11 +89,10 @@ func (s *Supervisor) watchLoop(ctx context.Context) {
 			if !wt.relevant(ev) {
 				continue
 			}
-			if ev.Has(fsnotify.Create) && wt.worktree {
-				if err := wt.addNewDir(ctx, ev.Name); err != nil {
-					wt.worktree = false
-					s.setWatching(false)
-					s.Send(WatchMsg{Mode: WatchGitOnly, Dirs: len(wt.watched), Reason: err.Error()})
+			if ev.Has(fsnotify.Create) && wt.worktree.Load() {
+				select {
+				case newDirs <- ev.Name:
+				default: // worker far behind; the safety-net poll covers it
 				}
 			}
 			if pending == nil {
@@ -95,6 +109,35 @@ func (s *Supervisor) watchLoop(ctx context.Context) {
 		case <-pending:
 			pending = nil
 			s.Refresh()
+		}
+	}
+}
+
+// dirWorker watches directories created after startup. It owns the
+// watched set and budget from here on.
+func (wt *watcher) dirWorker(ctx context.Context, paths <-chan string) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case p := <-paths:
+			if !wt.worktree.Load() {
+				continue
+			}
+			before := len(wt.watched)
+			if err := wt.addNewDir(ctx, p); err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				wt.worktree.Store(false)
+				wt.s.setWatching(false)
+				wt.s.Send(WatchMsg{Mode: WatchGitOnly, Dirs: len(wt.watched), Reason: err.Error()})
+				continue
+			}
+			// Files may have appeared before the watch was in place.
+			if len(wt.watched) > before {
+				wt.s.Refresh()
+			}
 		}
 	}
 }
@@ -131,7 +174,7 @@ func (s *Supervisor) startWatcher(ctx context.Context) (*watcher, string, string
 	if err := wt.addWorktree(ctx); err != nil {
 		return wt, WatchGitOnly, err.Error()
 	}
-	wt.worktree = true
+	wt.worktree.Store(true)
 	return wt, WatchFull, ""
 }
 
