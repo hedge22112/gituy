@@ -6,6 +6,7 @@ package bg
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hedge22112/gituy/internal/config"
@@ -44,6 +45,7 @@ type Supervisor struct {
 	fetchNow chan struct{}
 	mu       sync.Mutex
 	failures int
+	watching atomic.Bool // the watcher covers the working tree
 }
 
 // Run starts the background tasks and blocks until ctx is cancelled.
@@ -52,6 +54,9 @@ func (s *Supervisor) Run(ctx context.Context) {
 	s.fetchNow = make(chan struct{}, 1)
 
 	go s.pollLoop(ctx)
+	if s.Cfg.Status.Watch {
+		go s.watchLoop(ctx)
+	}
 	if s.Cfg.Fetch.Enabled {
 		go s.fetchLoop(ctx)
 	}
@@ -89,18 +94,23 @@ func (s *Supervisor) FetchNow() {
 	}
 }
 
+// pollLoop refreshes on a timer. With the watcher active it's only a
+// safety net, so it runs less often (see pollInterval).
 func (s *Supervisor) pollLoop(ctx context.Context) {
-	if s.Cfg.Status.PollInterval <= 0 {
-		return
-	}
-	t := time.NewTicker(s.Cfg.Status.PollInterval)
-	defer t.Stop()
 	for {
+		d := s.pollInterval()
+		if d <= 0 {
+			d = time.Second // disabled for now; check again in case the mode changes
+		}
+		t := time.NewTimer(d)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-t.C:
-			s.Refresh()
+			if s.pollInterval() > 0 {
+				s.Refresh()
+			}
 		}
 	}
 }

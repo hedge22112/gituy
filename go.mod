@@ -8,6 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/term v0.2.1
 	github.com/expr-lang/expr v1.17.2
+	github.com/fsnotify/fsnotify v1.8.0
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/muesli/termenv v0.16.0
 	gopkg.in/yaml.v3 v3.0.1

@@ -34,10 +34,10 @@ $ git add -- f.txt
   as you change options. Press `e` to edit it by hand, or `c` to copy it.
 - **Safety**: options that can lose work are shown in red and need
   confirmation.
-- **Background tasks**: polls repo status and fetches remotes periodically.
-  Fetches never prompt for credentials, back off after failures, and pause
-  during merges and rebases. Everything they run is shown in the activity
-  log (`l`).
+- **Background tasks**: watches the working tree and `.git` for changes
+  (with polling as a fallback) and fetches remotes periodically. Fetches
+  never prompt for credentials, back off after failures, and pause during
+  merges and rebases. Everything they do is shown in the activity log (`l`).
 - Runs git attached to your terminal, so editors, pagers, hooks and
   credential prompts work normally. Afterwards you return to gituy.
 
@@ -89,7 +89,10 @@ fetch:
   tags: false
   timeout: 60s
 status:
-  poll_interval: 3s
+  watch: true               # react to file changes immediately
+  max_watches: 8000         # bigger repos: watch .git only, poll the files
+  poll_interval: 3s         # when not watching (0 = off)
+  watch_poll_interval: 30s  # safety net while watching
 return_after_run: true
 max_suggestions: 6
 ```
@@ -102,8 +105,23 @@ max_suggestions: 6
 | `internal/spec` | command definitions as YAML (`internal/spec/commands/*.yaml`) |
 | `internal/builder` | spec + selections → argv, validation, danger level |
 | `internal/rules` | suggestion rules as YAML (`internal/rules/rules.yaml`), conditions in [expr](https://expr-lang.org) |
-| `internal/bg` | background status refresh and fetch |
+| `internal/bg` | background file watcher, status polling and fetch |
 | `internal/ui` | Bubble Tea screens: home, builder, picker, input, confirm, log |
+
+### File watching
+
+gituy watches `.git` (HEAD, index, refs, merge/rebase state) plus every
+working-tree directory that holds a tracked or non-ignored file, so ignored
+trees like `node_modules` cost nothing. New directories are picked up as
+they appear. Changes are debounced (250ms), and lock files, editor swap
+files and permission-only changes are ignored. Background `git status` runs
+with `--no-optional-locks`, so refreshing never writes the index and can't
+trigger itself.
+
+If the repository is larger than `max_watches`, or the OS watch limit is
+hit (Linux: `fs.inotify.max_user_watches`), gituy keeps watching `.git` and
+polls the working tree instead. On macOS and BSD, files count towards the
+limit too, because kqueue needs a file descriptor per file.
 
 Adding a command or suggestion is usually a YAML change. See the comments
 at the top of `rules.yaml` for what rule conditions can use.

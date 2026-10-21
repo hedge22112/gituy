@@ -111,7 +111,11 @@ func (a *activityLog) view(m *Model, height int) string {
 	for i := len(acts) - 1; i >= 0; i-- {
 		e := acts[i]
 		line := stMuted.Render(e.At.Format("15:04:05")) + "  " + builder.Quote(e.Argv)
+		if len(e.Argv) == 0 {
+			line = stMuted.Render(e.At.Format("15:04:05")) + "  " + stMuted.Render(e.Note)
+		}
 		switch {
+		case len(e.Argv) == 0:
 		case e.Err != nil:
 			line += "  " + stBad.Render(firstLine(e.Err.Error()))
 		case e.Note != "":

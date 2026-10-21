@@ -34,7 +34,10 @@ type Fetch struct {
 
 // Status controls background status refreshing.
 type Status struct {
-	PollInterval time.Duration `yaml:"poll_interval"`
+	PollInterval      time.Duration `yaml:"poll_interval"`       // 0 = off
+	Watch             bool          `yaml:"watch"`               // watch files for changes
+	WatchPollInterval time.Duration `yaml:"watch_poll_interval"` // safety-net poll while watching
+	MaxWatches        int           `yaml:"max_watches"`         // above this, poll the working tree
 }
 
 // Default returns the built-in defaults.
@@ -47,7 +50,12 @@ func Default() Config {
 			Prune:    true,
 			Timeout:  60 * time.Second,
 		},
-		Status:         Status{PollInterval: 3 * time.Second},
+		Status: Status{
+			PollInterval:      3 * time.Second,
+			Watch:             true,
+			WatchPollInterval: 30 * time.Second,
+			MaxWatches:        8000,
+		},
 		ReturnAfterRun: true,
 		MaxSuggestions: 6,
 	}

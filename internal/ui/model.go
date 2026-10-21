@@ -153,6 +153,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loaded = true
 			m.suggestions = m.Rules.Suggest(msg.State)
 		}
+	case bg.WatchMsg:
+		switch msg.Mode {
+		case bg.WatchFull:
+			m.log(Activity{At: time.Now(), Note: fmt.Sprintf("watching %d directories for changes", msg.Dirs)})
+		case bg.WatchGitOnly:
+			m.log(Activity{At: time.Now(), Note: "watching .git only, polling files: " + msg.Reason})
+			m.setNotice("polling for file changes: %s", msg.Reason)
+		default:
+			m.log(Activity{At: time.Now(), Note: "file watching off, polling: " + msg.Reason})
+			m.setNotice("file watching off: %s", msg.Reason)
+		}
 	case bg.FetchStartMsg:
 		m.fetching = true
 	case bg.FetchMsg:
