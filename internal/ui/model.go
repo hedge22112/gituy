@@ -15,6 +15,7 @@ import (
 	"github.com/hedge22112/gituy/internal/bg"
 	"github.com/hedge22112/gituy/internal/builder"
 	"github.com/hedge22112/gituy/internal/config"
+	"github.com/hedge22112/gituy/internal/forge"
 	"github.com/hedge22112/gituy/internal/git"
 	"github.com/hedge22112/gituy/internal/rules"
 	"github.com/hedge22112/gituy/internal/spec"
@@ -75,6 +76,8 @@ type Model struct {
 	fetchErr    error
 	notice      string
 	noticeAt    time.Time
+	forge       forge.Status
+	forgeClient *forge.Client
 
 	width, height int
 	stack         []screen
@@ -109,6 +112,10 @@ func (m *Model) pop() {
 	}
 }
 
+func (m *Model) resuggest() {
+	m.suggestions = m.Rules.SuggestWith(m.state, m.forge)
+}
+
 func (m *Model) setNotice(format string, args ...any) {
 	m.notice = fmt.Sprintf(format, args...)
 	m.noticeAt = time.Now()
@@ -126,8 +133,8 @@ func (m *Model) run(argv []string, problems []string, danger string) tea.Cmd {
 		m.setNotice("can't run yet: %s", strings.Join(problems, ", "))
 		return nil
 	}
-	if danger == spec.DangerHigh {
-		m.push(&confirm{argv: argv})
+	if builder.NeedsConfirm(danger) {
+		m.push(&confirm{argv: argv, danger: danger})
 		return nil
 	}
 	return m.finish(argv)
@@ -162,7 +169,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err == nil {
 			m.state = msg.State
 			m.loaded = true
-			m.suggestions = m.Rules.Suggest(msg.State)
+			m.resuggest()
+		}
+	case bg.ForgeMsg:
+		if msg.Status.Err != nil && (m.forge.Err == nil || m.forge.Err.Error() != msg.Status.Err.Error()) {
+			m.log(Activity{At: msg.At, Note: "couldn't read PR status: " + firstLine(msg.Status.Err.Error())})
+		}
+		m.forge = msg.Status
+		if msg.Client != nil {
+			m.forgeClient = msg.Client
+		}
+		m.resuggest()
+	case tea.FocusMsg:
+		if m.Sup != nil {
+			m.Sup.SetFocused(true)
+		}
+	case tea.BlurMsg:
+		if m.Sup != nil {
+			m.Sup.SetFocused(false)
 		}
 	case bg.WatchMsg:
 		switch msg.Mode {
@@ -318,6 +342,68 @@ func (m *Model) stateBar() string {
 	case !m.lastFetch.IsZero():
 		parts = append(parts, stMuted.Render("fetched "+ago(m.lastFetch)))
 	}
+	if f := forgeSegment(m.forge); f != "" {
+		parts = append(parts, f)
+	}
+	return strings.Join(parts, stMuted.Render(" · "))
+}
+
+// forgeSegment summarises the branch's PR/MR for the state bar, e.g.
+// "PR #42 ✓ checks · approved".
+func forgeSegment(fs forge.Status) string {
+	if fs.Kind == forge.None || !fs.Installed {
+		return ""
+	}
+	if !fs.Authed {
+		return stMuted.Render(fs.CLI() + ": not logged in")
+	}
+	var parts []string
+	pr := fs.PR
+	if pr != nil {
+		name := fmt.Sprintf("PR #%d", pr.Number)
+		if fs.Kind == forge.GitLab {
+			name = fmt.Sprintf("MR !%d", pr.Number)
+		}
+		switch pr.State {
+		case "merged":
+			parts = append(parts, stGood.Render(name+" merged"))
+		case "closed":
+			parts = append(parts, stMuted.Render(name+" closed"))
+		default:
+			if pr.Draft {
+				name = "draft " + name
+			}
+			seg := stBold.Render(name)
+			switch pr.Checks {
+			case "passing":
+				seg += " " + stGood.Render("✓ checks")
+			case "failing":
+				seg += " " + stBad.Render("✗ checks")
+			case "pending":
+				seg += " " + stWarn.Render("● checks")
+			}
+			parts = append(parts, seg)
+			switch {
+			case pr.Conflicts:
+				parts = append(parts, stBad.Render("conflicts"))
+			case pr.Review == "approved":
+				parts = append(parts, stGood.Render("approved"))
+			case pr.Review == "changes_requested":
+				parts = append(parts, stWarn.Render("changes requested"))
+			case pr.Review == "review_required":
+				parts = append(parts, stMuted.Render("awaiting review"))
+			}
+			if pr.Behind && !pr.Conflicts {
+				parts = append(parts, stWarn.Render("behind "+pr.Base))
+			}
+		}
+	}
+	if fs.ReviewQueue > 0 {
+		parts = append(parts, stAccent.Render(fmt.Sprintf("%d to review", fs.ReviewQueue)))
+	}
+	if fs.Err != nil && pr == nil {
+		parts = append(parts, stMuted.Render(fs.CLI()+": couldn't check (l for details)"))
+	}
 	return strings.Join(parts, stMuted.Render(" · "))
 }
 
@@ -344,8 +430,11 @@ func (m *Model) footer() string {
 	} else {
 		b.WriteString(stPrompt.Render("$ "))
 		b.WriteString(dangerStyle(danger).Bold(true).Render(builder.Quote(argv)))
-		if danger == spec.DangerHigh {
+		switch danger {
+		case spec.DangerHigh:
 			b.WriteString(stBad.Render("  ⚠ can lose work"))
+		case spec.DangerConfirm:
+			b.WriteString(stWarn.Render("  ● asks before running"))
 		}
 	}
 	b.WriteString("\n")

@@ -40,6 +40,11 @@ $ git add -- f.txt
   deleted, and deleting branches that are already merged.
 - **Outside a repository** it offers `git init` and `git clone`, then
   carries on in the new repository.
+- **GitHub and GitLab** through the `gh` and `glab` CLIs: the status bar
+  shows the branch's pull/merge request (checks, review, conflicts), and
+  suggestions follow it: open a PR, read requested changes, see failing
+  checks and their logs, update or rebase, mark ready, merge, clean up
+  after a merge, and check out PRs waiting for your review.
 - **Safety**: options that can lose work are shown in red and need
   confirmation.
 - **Background tasks**: watches the working tree and `.git` for changes
@@ -112,6 +117,57 @@ return_after_run: true
 max_suggestions: 6
 ```
 
+## GitHub and GitLab
+
+If the repository's remote is on GitHub or GitLab and
+[`gh`](https://cli.github.com) or [`glab`](https://gitlab.com/gitlab-org/cli)
+is installed and logged in, gituy shows the current branch's pull/merge
+request in the status bar:
+
+```
+feat/login · in sync · clean · PR #42 ✓ checks · approved · 2 to review
+```
+
+and suggests what to do next:
+
+| Situation | Suggestion |
+|---|---|
+| Branch pushed, no PR | `gh pr create --fill` / `glab mr create --fill` |
+| Changes requested | `gh pr view --comments` / `glab mr view --comments` |
+| Checks failing | `gh pr checks`, `gh run view --log-failed` / `glab ci status`, `glab ci trace` |
+| Checks running | `gh pr checks --watch` / `glab ci status --live` |
+| Behind its base | `gh pr update-branch` / `glab mr rebase` |
+| Conflicts with its base | `git pull --rebase origin <base>` |
+| Draft | `gh pr ready` / `glab mr update --ready` |
+| Approved and green | `gh pr merge --squash --delete-branch` / `glab mr merge --squash --remove-source-branch` |
+| Merged | switch back to the default branch (then delete the branch) |
+| Reviews waiting for you | `gh pr checkout <pr>` / `glab mr checkout <mr>` with a picker |
+| On the default branch | `gh issue develop --checkout <issue>` (GitHub) |
+
+gituy never handles tokens: it only runs the CLIs, with their prompts
+turned off in the background. If a CLI is installed but not logged in,
+it suggests `gh auth login` / `glab auth login`. Commands that change
+things others can see (opening, marking ready, updating, merging,
+reopening) are marked "asks before running" and need a `y`. Checks run
+about once a minute, right after fetches, pushes and branch switches,
+and pause while the terminal isn't focused.
+
+Self-hosted instances are recognised when the hostname contains `github`
+or `gitlab`, or when the CLI is logged in to that host. Otherwise, name
+them in the config:
+
+```yaml
+forge:
+  enabled: true
+  interval: 1m
+  review_queue: true
+  hosts:
+    code.example.com: gitlab
+```
+
+glab only reports open merge requests for the current branch, so a
+merged MR is noticed through its deleted remote branch instead.
+
 ## How it's built
 
 | Package | Role |
@@ -120,7 +176,8 @@ max_suggestions: 6
 | `internal/spec` | command definitions as YAML (`internal/spec/commands/*.yaml`) |
 | `internal/builder` | spec + selections → argv, validation, danger level |
 | `internal/rules` | suggestion rules as YAML (`internal/rules/rules.yaml`), conditions in [expr](https://expr-lang.org) |
-| `internal/bg` | background file watcher, status polling and fetch |
+| `internal/bg` | background file watcher, status polling, fetch and PR/MR checks |
+| `internal/forge` | GitHub/GitLab detection and PR/MR status through `gh` and `glab` |
 | `internal/ui` | Bubble Tea screens: home, builder, picker, input, confirm, log |
 
 ### File watching
@@ -152,7 +209,11 @@ switch, branch (create, rename, delete, list, unset upstream), merge,
 rebase, cherry-pick, revert, checkout --ours/--theirs, log, stash (push,
 pop, apply, list, drop), tag (create, delete, list), remote (add, remove,
 list), worktree (add, list, remove), init, clone, plus continue/abort for
-merge, rebase, cherry-pick and revert. Any other git command can be typed
+merge, rebase, cherry-pick and revert. With `gh`: auth login, pr (create,
+view, checks, ready, update-branch, merge, reopen, checkout, list), run
+(list, view), issue (list, develop). With `glab`: auth login, mr (create,
+view, update --ready, rebase, merge, reopen, checkout, list), ci (status,
+view, trace), issue list. Any other git command can be typed
 with `e` and runs as typed.
 
 ## Releasing

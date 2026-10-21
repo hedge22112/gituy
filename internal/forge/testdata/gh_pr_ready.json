@@ -1,0 +1,6 @@
+{"number":7,"title":"Fix typo","url":"https://github.com/o/r/pull/7","state":"OPEN","isDraft":false,
+ "reviewDecision":"APPROVED","mergeStateStatus":"CLEAN","mergeable":"MERGEABLE","baseRefName":"main",
+ "statusCheckRollup":[
+  {"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"SUCCESS"},
+  {"__typename":"CheckRun","name":"docs","status":"COMPLETED","conclusion":"SKIPPED"},
+  {"__typename":"StatusContext","context":"deploy","state":"SUCCESS"}]}

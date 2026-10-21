@@ -17,14 +17,19 @@ var builtin embed.FS
 
 // Danger levels for options and commands.
 const (
-	DangerNone = ""
-	DangerLow  = "low"  // rewrites history or is surprising
-	DangerHigh = "high" // can lose work
+	DangerNone    = ""
+	DangerLow     = "low"     // rewrites history or is surprising
+	DangerConfirm = "confirm" // changes things outside this machine (e.g. merging a PR); asks first
+	DangerHigh    = "high"    // can lose work
 )
+
+// Programs a command can run. Anything else is refused.
+var Programs = map[string]bool{"git": true, "gh": true, "glab": true}
 
 // Command describes one buildable git command.
 type Command struct {
 	ID      string   `yaml:"id"`
+	Bin     string   `yaml:"bin"`   // program: git (default), gh or glab
 	Cmd     []string `yaml:"cmd"`   // e.g. [stash, push]
 	Fixed   []string `yaml:"fixed"` // flags always present, e.g. [--continue]
 	Label   string   `yaml:"label"` // display name when cmd alone is ambiguous
@@ -66,6 +71,8 @@ var Sources = map[string]bool{
 	"remotes": true, "changed": true, "unstaged": true, "staged": true,
 	"untracked": true, "conflicted": true, "commits": true, "stashes": true,
 	"other_commits": true, "tags": true, "worktrees": true,
+	// from the GitHub/GitLab CLI
+	"prs": true, "review_prs": true, "issues": true, "ci_runs": true,
 }
 
 // Set is a loaded collection of commands.
@@ -130,6 +137,9 @@ func (c *Command) validate() error {
 	if c.ID == "" || len(c.Cmd) == 0 {
 		return fmt.Errorf("command %q needs id and cmd", c.ID)
 	}
+	if c.Bin != "" && !Programs[c.Bin] {
+		return fmt.Errorf("%s: unknown program %q", c.ID, c.Bin)
+	}
 	flags := map[string]bool{}
 	for _, o := range c.Options {
 		if o.Flag == "" || o.Desc == "" {
@@ -170,6 +180,23 @@ func (c *Command) Option(flag string) *Option {
 		}
 	}
 	return nil
+}
+
+// Program is the executable the command runs.
+func (c *Command) Program() string {
+	if c.Bin == "" {
+		return "git"
+	}
+	return c.Bin
+}
+
+// Display is the name shown in command lists: the title, prefixed with
+// the program when it isn't git, e.g. "gh pr create".
+func (c *Command) Display() string {
+	if c.Program() == "git" {
+		return c.Title()
+	}
+	return c.Program() + " " + c.Title()
 }
 
 // Title is the command as typed, e.g. "stash push", or its label.

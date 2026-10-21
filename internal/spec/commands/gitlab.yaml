@@ -1,0 +1,134 @@
+# GitLab CLI (glab). Shown when the repository's remote is on GitLab and
+# glab is installed.
+
+- id: glab-auth-login
+  bin: glab
+  cmd: [auth, login]
+  summary: Log in to GitLab so gituy can show merge requests
+  options:
+    - flag: --hostname
+      desc: GitLab host (for self-hosted GitLab)
+      value: host
+
+- id: glab-mr-create
+  bin: glab
+  cmd: [mr, create]
+  summary: Open a merge request for this branch
+  danger: confirm
+  options:
+    - flag: --fill
+      desc: Use the commit messages for the title and description
+    - flag: --draft
+      desc: Open it as a draft
+    - flag: --title
+      desc: Merge request title
+      value: title
+    - flag: --description
+      desc: Merge request description
+      value: text
+    - flag: --target-branch
+      desc: Branch to merge into
+      value: branch
+    - flag: --reviewer
+      desc: Ask someone to review (comma-separated usernames)
+      value: usernames
+    - flag: --web
+      desc: Finish creating it in the browser
+
+- id: glab-mr-view
+  bin: glab
+  cmd: [mr, view]
+  summary: Show a merge request
+  options:
+    - flag: --comments
+      desc: Include comments
+    - flag: --web
+      desc: Open it in the browser
+  args:
+    - name: mr
+      desc: Merge request (default the one for this branch)
+      source: prs
+
+- id: glab-mr-ready
+  bin: glab
+  cmd: [mr, update]
+  fixed: [--ready]
+  summary: Mark a draft merge request as ready
+  danger: confirm
+
+- id: glab-mr-rebase
+  bin: glab
+  cmd: [mr, rebase]
+  summary: Rebase the merge request onto its target branch (on GitLab)
+  danger: confirm
+
+- id: glab-mr-merge
+  bin: glab
+  cmd: [mr, merge]
+  summary: Merge the merge request
+  danger: confirm
+  options:
+    - flag: --squash
+      desc: Combine all its commits into one
+    - flag: --rebase
+      desc: Rebase the commits onto the target branch before merging
+    - flag: --remove-source-branch
+      desc: Delete the branch on GitLab afterwards
+
+- id: glab-mr-reopen
+  bin: glab
+  cmd: [mr, reopen]
+  summary: Reopen a closed merge request
+  danger: confirm
+
+- id: glab-mr-checkout
+  bin: glab
+  cmd: [mr, checkout]
+  summary: Check out someone's merge request locally
+  args:
+    - name: mr
+      desc: Merge request
+      source: review_prs
+      required: true
+
+- id: glab-mr-list
+  bin: glab
+  cmd: [mr, list]
+  summary: List merge requests
+  options:
+    - flag: --reviewer
+      desc: "Only MRs this user is reviewing, e.g. @me"
+      value: username
+    - flag: --author
+      desc: "Only MRs by this user, e.g. @me"
+      value: username
+
+- id: glab-ci-status
+  bin: glab
+  cmd: [ci, status]
+  summary: Show the pipeline for this branch
+  options:
+    - flag: --live
+      desc: Keep updating until the pipeline finishes
+
+- id: glab-ci-view
+  bin: glab
+  cmd: [ci, view]
+  summary: Browse the pipeline's jobs interactively
+
+- id: glab-ci-trace
+  bin: glab
+  cmd: [ci, trace]
+  summary: Show a CI job's log
+  args:
+    - name: job
+      desc: "Job id (default: choose interactively)"
+
+- id: glab-issue-list
+  bin: glab
+  cmd: [issue, list]
+  summary: List issues
+  options:
+    - flag: --assignee
+      desc: "Only issues assigned to someone, e.g. @me"
+      value: username

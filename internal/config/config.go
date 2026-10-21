@@ -16,6 +16,7 @@ import (
 type Config struct {
 	Fetch          Fetch  `yaml:"fetch"`
 	Status         Status `yaml:"status"`
+	Forge          Forge  `yaml:"forge"`
 	ReturnAfterRun bool   `yaml:"return_after_run"`
 	MaxSuggestions int    `yaml:"max_suggestions"`
 }
@@ -30,6 +31,14 @@ type Fetch struct {
 	Prune    bool          `yaml:"prune"`
 	Tags     bool          `yaml:"tags"`
 	Timeout  time.Duration `yaml:"timeout"`
+}
+
+// Forge controls GitHub/GitLab integration through the gh and glab CLIs.
+type Forge struct {
+	Enabled     bool              `yaml:"enabled"`
+	Interval    time.Duration     `yaml:"interval"`     // how often to check the branch's PR/MR
+	ReviewQueue bool              `yaml:"review_queue"` // also count PRs waiting for your review
+	Hosts       map[string]string `yaml:"hosts"`        // self-hosted: hostname -> github or gitlab
 }
 
 // Status controls background status refreshing.
@@ -56,6 +65,7 @@ func Default() Config {
 			WatchPollInterval: 30 * time.Second,
 			MaxWatches:        8000,
 		},
+		Forge:          Forge{Enabled: true, Interval: time.Minute, ReviewQueue: true},
 		ReturnAfterRun: true,
 		MaxSuggestions: 6,
 	}

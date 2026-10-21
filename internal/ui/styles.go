@@ -30,7 +30,7 @@ func dangerStyle(level string) lipgloss.Style {
 	switch level {
 	case spec.DangerHigh:
 		return stBad
-	case spec.DangerLow:
+	case spec.DangerLow, spec.DangerConfirm:
 		return stWarn
 	}
 	return lipgloss.NewStyle()

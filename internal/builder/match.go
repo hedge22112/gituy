@@ -11,7 +11,7 @@ import (
 // explains the most of argv; prefer (if non-nil) wins ties. When no spec
 // fits, it returns a "custom" command that runs argv exactly as typed.
 func Match(specs *spec.Set, argv []string, prefer *spec.Command) (*spec.Command, Selection) {
-	if len(argv) < 2 || argv[0] != "git" {
+	if len(argv) < 2 || !spec.Programs[argv[0]] {
 		sel := empty()
 		sel.Trailing = argv[min(len(argv), 2):]
 		return Custom(argv), sel
@@ -22,6 +22,9 @@ func Match(specs *spec.Set, argv []string, prefer *spec.Command) (*spec.Command,
 	var bestSel Selection
 	bestScore, bestLen := 0, -1
 	for _, c := range specs.All() {
+		if c.Program() != argv[0] {
+			continue
+		}
 		prefix := append(append([]string{}, c.Cmd...), c.Fixed...)
 		if !hasPrefix(rest, prefix) {
 			continue
@@ -50,8 +53,13 @@ func Custom(argv []string) *spec.Command {
 	if len(argv) > 1 {
 		sub = argv[1]
 	}
+	bin := "git"
+	if len(argv) > 0 && spec.Programs[argv[0]] {
+		bin = argv[0]
+	}
 	return &spec.Command{
 		ID:      "custom",
+		Bin:     bin,
 		Cmd:     []string{sub},
 		Summary: "Not in gituy's command list; runs exactly as typed",
 	}

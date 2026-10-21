@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/hedge22112/gituy/internal/builder"
+	"github.com/hedge22112/gituy/internal/spec"
 )
 
 // input asks for a line of text.
@@ -66,7 +67,8 @@ func (in *input) view(m *Model, height int) string {
 
 // confirm guards commands that can lose work.
 type confirm struct {
-	argv []string
+	argv   []string
+	danger string
 }
 
 func (c *confirm) capturesText() bool { return false }
@@ -83,11 +85,15 @@ func (c *confirm) update(m *Model, msg tea.KeyMsg) tea.Cmd {
 }
 
 func (c *confirm) preview(m *Model) ([]string, []string, string) {
-	return c.argv, nil, "high"
+	return c.argv, nil, c.danger
 }
 
 func (c *confirm) view(m *Model, height int) string {
-	return stBad.Render("This command can permanently lose work:") + "\n\n  " +
+	head := stBad.Render("This command can permanently lose work:")
+	if c.danger == spec.DangerConfirm {
+		head = stWarn.Render("This command changes things outside your machine (others will see it):")
+	}
+	return head + "\n\n  " +
 		stBold.Render(builder.Quote(c.argv)) + "\n\n" +
 		"Run it? " + stBold.Render("y") + " to run, any other key to cancel"
 }

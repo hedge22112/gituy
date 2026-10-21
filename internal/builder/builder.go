@@ -60,7 +60,7 @@ func (s Selection) Toggle(c *spec.Command, flag string) {
 // Build returns the argv (starting with "git") and any problems that
 // would make the command fail or be invalid.
 func Build(c *spec.Command, s Selection) (argv []string, problems []string) {
-	argv = append([]string{"git"}, c.Cmd...)
+	argv = append([]string{c.Program()}, c.Cmd...)
 	argv = append(argv, c.Fixed...)
 
 	for _, o := range c.Options {
@@ -138,11 +138,18 @@ func Danger(c *spec.Command, s Selection) string {
 func rank(d string) int {
 	switch d {
 	case spec.DangerHigh:
+		return 3
+	case spec.DangerConfirm:
 		return 2
 	case spec.DangerLow:
 		return 1
 	}
 	return 0
+}
+
+// NeedsConfirm reports whether a danger level means asking before running.
+func NeedsConfirm(danger string) bool {
+	return danger == spec.DangerHigh || danger == spec.DangerConfirm
 }
 
 // Quote renders argv as a shell command line, safe to copy and paste.
@@ -156,8 +163,8 @@ func Parse(line string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(argv) == 0 || argv[0] != "git" {
-		return nil, fmt.Errorf("command must start with git")
+	if len(argv) == 0 || !spec.Programs[argv[0]] {
+		return nil, fmt.Errorf("command must start with git, gh or glab")
 	}
 	for _, a := range argv {
 		if strings.ContainsAny(a, "\x00") {

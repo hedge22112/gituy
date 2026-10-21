@@ -5,11 +5,13 @@ package bg
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/hedge22112/gituy/internal/config"
+	"github.com/hedge22112/gituy/internal/forge"
 	"github.com/hedge22112/gituy/internal/git"
 )
 
@@ -41,11 +43,17 @@ type Supervisor struct {
 	// recently (gituy restarts its UI after running a command).
 	LastFetch time.Time
 
-	refresh  chan struct{}
-	fetchNow chan struct{}
-	mu       sync.Mutex
-	failures int
-	watching atomic.Bool // the watcher covers the working tree
+	// NewForge replaces GitHub/GitLab detection (for tests).
+	NewForge func(ctx context.Context) (ForgeStatuser, *forge.Client)
+
+	refresh    chan struct{}
+	fetchNow   chan struct{}
+	forgeNow   chan struct{}
+	mu         sync.Mutex
+	failures   int
+	watching   atomic.Bool // the watcher covers the working tree
+	unfocused  atomic.Bool // the terminal doesn't have focus
+	forgeStale atomic.Bool // a forge check was skipped while unfocused
 }
 
 // Run starts the background tasks and blocks until ctx is cancelled and
@@ -53,6 +61,7 @@ type Supervisor struct {
 func (s *Supervisor) Run(ctx context.Context) {
 	s.refresh = make(chan struct{}, 1)
 	s.fetchNow = make(chan struct{}, 1)
+	s.forgeNow = make(chan struct{}, 1)
 
 	var wg sync.WaitGroup
 	defer wg.Wait()
@@ -70,7 +79,11 @@ func (s *Supervisor) Run(ctx context.Context) {
 	if s.Cfg.Fetch.Enabled {
 		start(s.fetchLoop)
 	}
+	if s.Cfg.Forge.Enabled {
+		start(s.forgeLoop)
+	}
 	s.Refresh()
+	lastKey := ""
 	for {
 		select {
 		case <-ctx.Done():
@@ -81,6 +94,14 @@ func (s *Supervisor) Run(ctx context.Context) {
 				return
 			}
 			s.Send(StateMsg{State: st, Err: err})
+			// Switching branch or pushing changes which PR applies and
+			// what it looks like: check the forge straight away.
+			if key := fmt.Sprint(st.Branch, st.Upstream, st.Ahead); err == nil && key != lastKey {
+				if lastKey != "" {
+					s.ForgeNow()
+				}
+				lastKey = key
+			}
 		}
 	}
 }
@@ -219,6 +240,7 @@ func (s *Supervisor) fetch(ctx context.Context) {
 	at := s.LastFetch
 	s.mu.Unlock()
 
+	s.ForgeNow() // new remote commits often mean new PR state
 	s.Send(FetchMsg{
 		Args: append([]string{"git"}, args...), Changes: git.DiffRefs(before, after),
 		At: at, Dur: time.Since(start), Err: err,

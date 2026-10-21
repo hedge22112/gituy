@@ -9,6 +9,7 @@ import (
 
 	"github.com/hedge22112/gituy/internal/bg"
 	"github.com/hedge22112/gituy/internal/config"
+	"github.com/hedge22112/gituy/internal/forge"
 	"github.com/hedge22112/gituy/internal/git"
 	"github.com/hedge22112/gituy/internal/rules"
 	"github.com/hedge22112/gituy/internal/spec"
@@ -200,5 +201,93 @@ func TestNotARepository(t *testing.T) {
 	keys(m, "r")
 	if strings.Join(m.Result.Argv, " ") != "git init" {
 		t.Errorf("result = %v", m.Result.Argv)
+	}
+}
+
+func ghStatus(pr *forge.PR) bg.ForgeMsg {
+	return bg.ForgeMsg{Status: forge.Status{Kind: forge.GitHub, Host: "github.com", Installed: true, Authed: true, PR: pr}}
+}
+
+var pushedFeat = git.State{Branch: "feat", HasCommits: true, HeadPushed: true, Upstream: "origin/feat",
+	DefaultBranch: "main", Remotes: []string{"origin"}}
+
+func TestForgeStatusBarAndMergeConfirm(t *testing.T) {
+	m := newModel(t, pushedFeat)
+	m.Update(ghStatus(&forge.PR{Number: 42, State: "open", Checks: "passing", Review: "approved", Base: "main"}))
+	if v := m.View(); !strings.Contains(v, "PR #42 ✓ checks") || !strings.Contains(v, "approved") {
+		t.Fatalf("state bar missing PR status:\n%s", v)
+	}
+	if got := preview(m); got != "gh pr merge --squash --delete-branch" {
+		t.Fatalf("top suggestion = %q", got)
+	}
+	// Merging is outward-facing: r asks first, and says why.
+	keys(m, "r")
+	c, ok := m.top().(*confirm)
+	if !ok || m.done {
+		t.Fatalf("expected confirmation, got %T done=%v", m.top(), m.done)
+	}
+	if v := c.view(m, 10); !strings.Contains(v, "outside your machine") {
+		t.Errorf("confirm text: %s", v)
+	}
+	keys(m, "y")
+	if strings.Join(m.Result.Argv, " ") != "gh pr merge --squash --delete-branch" {
+		t.Fatalf("result = %v", m.Result.Argv)
+	}
+}
+
+func TestForgeCommandsOnlyWhenInstalled(t *testing.T) {
+	has := func(m *Model, id string) bool {
+		for _, it := range m.top().(*home).items(m) {
+			if it.cmd != nil && it.cmd.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+	m := newModel(t, pushedFeat)
+	if has(m, "gh-pr-create") || has(m, "glab-mr-create") {
+		t.Fatal("forge commands shown without a forge")
+	}
+	m.Update(ghStatus(nil))
+	if !has(m, "gh-pr-create") || has(m, "glab-mr-create") {
+		t.Fatal("gh commands should show (and only gh)")
+	}
+	if got := preview(m); got != "gh pr create --fill" {
+		t.Errorf("top suggestion = %q", got)
+	}
+}
+
+func TestForgeLoggedOutAndDrafts(t *testing.T) {
+	m := newModel(t, pushedFeat)
+	m.Update(bg.ForgeMsg{Status: forge.Status{Kind: forge.GitHub, Host: "github.com", Installed: true}})
+	if v := m.View(); !strings.Contains(v, "gh: not logged in") {
+		t.Errorf("view:\n%s", v)
+	}
+	m.Update(bg.ForgeMsg{Status: forge.Status{Kind: forge.GitLab, Host: "gitlab.com", Installed: true, Authed: true,
+		PR: &forge.PR{Number: 7, State: "open", Draft: true, Checks: "failing"}, ReviewQueue: 3}})
+	v := m.View()
+	for _, want := range []string{"draft MR !7", "✗ checks", "3 to review"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q in:\n%s", want, v)
+		}
+	}
+}
+
+func TestTypeGhCommand(t *testing.T) {
+	m := newModel(t, pushedFeat)
+	m.Update(ghStatus(nil))
+	keys(m, "e")
+	in := m.top().(*input)
+	in.ti.SetValue("gh pr create --draft --title 'WIP: login'")
+	keys(m, "enter")
+	b, ok := m.top().(*build)
+	if !ok || b.cmd.ID != "gh-pr-create" || !b.sel.Flags["--draft"] || b.sel.Values["--title"] != "WIP: login" {
+		t.Fatalf("top = %T %+v", m.top(), m.top())
+	}
+	keys(m, "e")
+	m.top().(*input).ti.SetValue("rm -rf /")
+	keys(m, "enter")
+	if _, ok := m.top().(*input); !ok {
+		t.Fatal("a non-git/gh/glab command must be refused")
 	}
 }

@@ -1,0 +1,177 @@
+# GitHub CLI (gh). Shown when the repository's remote is on GitHub and gh
+# is installed.
+
+- id: gh-auth-login
+  bin: gh
+  cmd: [auth, login]
+  summary: Log in to GitHub so gituy can show pull requests
+  options:
+    - flag: --hostname
+      desc: GitHub host (for GitHub Enterprise)
+      value: host
+    - flag: --web
+      desc: Log in through the browser
+
+- id: gh-pr-create
+  bin: gh
+  cmd: [pr, create]
+  summary: Open a pull request for this branch
+  danger: confirm
+  options:
+    - flag: --fill
+      desc: Use the commit messages for the title and description
+    - flag: --draft
+      desc: Open it as a draft (not ready for review yet)
+    - flag: --title
+      desc: Pull request title
+      value: title
+    - flag: --body
+      desc: Pull request description
+      value: text
+    - flag: --base
+      desc: Branch to merge into (default the repository's default branch)
+      value: branch
+    - flag: --reviewer
+      desc: Ask someone to review (comma-separated logins)
+      value: logins
+    - flag: --web
+      desc: Finish creating it in the browser
+
+- id: gh-pr-view
+  bin: gh
+  cmd: [pr, view]
+  summary: Show a pull request
+  options:
+    - flag: --comments
+      desc: Include review comments
+    - flag: --web
+      desc: Open it in the browser
+  args:
+    - name: pr
+      desc: Pull request (default the one for this branch)
+      source: prs
+
+- id: gh-pr-checks
+  bin: gh
+  cmd: [pr, checks]
+  summary: Show the CI checks on a pull request
+  options:
+    - flag: --watch
+      desc: Keep watching until the checks finish
+    - flag: --fail-fast
+      desc: With --watch, stop as soon as one fails
+
+- id: gh-pr-ready
+  bin: gh
+  cmd: [pr, ready]
+  summary: Mark a draft pull request as ready for review
+  danger: confirm
+
+- id: gh-pr-update-branch
+  bin: gh
+  cmd: [pr, update-branch]
+  summary: Bring the pull request up to date with its base branch (on GitHub)
+  danger: confirm
+  options:
+    - flag: --rebase
+      desc: Rebase instead of merging the base branch in
+
+- id: gh-pr-merge
+  bin: gh
+  cmd: [pr, merge]
+  summary: Merge the pull request
+  danger: confirm
+  options:
+    - flag: --squash
+      desc: Combine all its commits into one
+      group: method
+    - flag: --merge
+      desc: Keep every commit, with a merge commit
+      group: method
+    - flag: --rebase
+      desc: Replay the commits onto the base branch
+      group: method
+    - flag: --delete-branch
+      desc: Delete the branch locally and on GitHub afterwards
+    - flag: --auto
+      desc: Merge automatically once requirements (checks, reviews) are met
+
+- id: gh-pr-reopen
+  bin: gh
+  cmd: [pr, reopen]
+  summary: Reopen a closed pull request
+  danger: confirm
+
+- id: gh-pr-checkout
+  bin: gh
+  cmd: [pr, checkout]
+  summary: Check out someone's pull request locally
+  args:
+    - name: pr
+      desc: Pull request
+      source: review_prs
+      required: true
+
+- id: gh-pr-list
+  bin: gh
+  cmd: [pr, list]
+  summary: List pull requests
+  options:
+    - flag: --search
+      desc: "Filter, e.g. review-requested:@me or author:@me"
+      value: query
+    - flag: --state
+      desc: open, closed, merged or all
+      value: state
+
+- id: gh-run-list
+  bin: gh
+  cmd: [run, list]
+  summary: List recent CI runs
+  options:
+    - flag: --branch
+      desc: Only runs for this branch
+      value: branch
+
+- id: gh-run-view
+  bin: gh
+  cmd: [run, view]
+  summary: Show a CI run and its jobs
+  options:
+    - flag: --log-failed
+      desc: Print the logs of the failed steps
+    - flag: --web
+      desc: Open it in the browser
+  args:
+    - name: run
+      desc: "CI run (default: choose interactively)"
+      source: ci_runs
+
+- id: gh-issue-list
+  bin: gh
+  cmd: [issue, list]
+  summary: List issues
+  options:
+    - flag: --assignee
+      desc: "Only issues assigned to someone, e.g. @me"
+      value: login
+
+- id: gh-issue-develop
+  bin: gh
+  cmd: [issue, develop]
+  summary: Create a branch for an issue, linked to it on GitHub
+  options:
+    - flag: --checkout
+      desc: Switch to the new branch
+      default: true
+    - flag: --base
+      desc: Branch to start from
+      value: branch
+    - flag: --name
+      desc: Name of the new branch
+      value: branch
+  args:
+    - name: issue
+      desc: Issue to work on
+      source: issues
+      required: true

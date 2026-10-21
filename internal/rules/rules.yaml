@@ -2,7 +2,10 @@
 #   branch, detached, has_commits, upstream, ahead, behind, staged, unstaged,
 #   untracked, changed, conflicted, op, stash, head_pushed, remotes, remote,
 #   clean, in_repo, upstream_gone, last_action, default_branch,
-#   merged_branches, gone_branches
+#   merged_branches, gone_branches, and for GitHub/GitLab (see
+#   rules.EnvWith): forge_cli, forge_ready, forge_needs_login, forge_host,
+#   pr, pr_number, pr_state, pr_draft, pr_review, pr_checks, pr_behind,
+#   pr_conflicts, pr_base, review_queue
 # Titles and preset strings may use templates ({{.branch}}); "@list" in an
 # arg preset expands to every item of that list. `for_each` makes one
 # suggestion per item of a list, available as {{.item}}.
@@ -272,3 +275,193 @@
   title: "Clone a repository"
   command: clone
   priority: 90
+
+# --- GitHub / GitLab (both) ---------------------------------------------
+
+- id: forge-login-gh
+  when: forge_needs_login && forge_cli == "gh"
+  title: "Log in to the GitHub CLI to see pull requests"
+  command: gh-auth-login
+  preset: { flags: [--hostname], values: { --hostname: "{{.forge_host}}" } }
+  priority: 25
+
+- id: forge-login-glab
+  when: forge_needs_login && forge_cli == "glab"
+  title: "Log in to the GitLab CLI to see merge requests"
+  command: glab-auth-login
+  preset: { flags: [--hostname], values: { --hostname: "{{.forge_host}}" } }
+  priority: 25
+
+- id: pr-merged
+  when: op == "" && pr && pr_state == "merged" && default_branch != "" && branch != default_branch
+  title: "#{{.pr_number}} was merged: switch back to {{.default_branch}}"
+  explain: |
+    Your work is in {{.default_branch}} now. Switch, pull, then delete
+    {{.branch}} (gituy will suggest it).
+  command: switch
+  preset: { args: { branch: ["{{.default_branch}}"] } }
+  priority: 84
+
+- id: pr-conflicts
+  when: op == "" && pr && pr_state == "open" && pr_conflicts && remote != "" && pr_base != ""
+  title: "#{{.pr_number}} conflicts with {{.pr_base}}: rebase onto it to fix"
+  explain: |
+    Replays your commits on top of {{.remote}}/{{.pr_base}} so you can fix
+    the conflicts locally, then push with --force-with-lease.
+  command: pull
+  preset:
+    flags: [--rebase]
+    args: { remote: ["{{.remote}}"], branch: ["{{.pr_base}}"] }
+  priority: 83
+
+# --- GitHub (gh) ---------------------------------------------------------
+
+- id: gh-pr-create
+  when: 'forge_cli == "gh" && forge_ready && !pr && op == "" && !detached && has_commits && upstream != "" && !upstream_gone && ahead == 0 && default_branch != "" && branch != default_branch'
+  title: "Open a pull request for {{.branch}}"
+  command: gh-pr-create
+  preset: { flags: [--fill] }
+  priority: 74
+
+- id: gh-pr-changes-requested
+  when: forge_cli == "gh" && pr && pr_state == "open" && pr_review == "changes_requested"
+  title: "PR #{{.pr_number}}: changes requested, read the review"
+  command: gh-pr-view
+  preset: { flags: [--comments] }
+  priority: 81
+
+- id: gh-pr-checks-failing
+  when: forge_cli == "gh" && pr && pr_state == "open" && pr_checks == "failing"
+  title: "PR #{{.pr_number}}: checks are failing, see which"
+  command: gh-pr-checks
+  priority: 80
+
+- id: gh-run-failed-logs
+  when: forge_cli == "gh" && pr && pr_state == "open" && pr_checks == "failing"
+  title: "Show the failed CI logs"
+  command: gh-run-view
+  preset: { flags: [--log-failed] }
+  priority: 79
+
+- id: gh-pr-merge
+  when: 'forge_cli == "gh" && pr && pr_state == "open" && !pr_draft && pr_review == "approved" && pr_checks in ["passing", "none"] && !pr_behind && !pr_conflicts && op == "" && ahead == 0'
+  title: "PR #{{.pr_number}} is approved and green: merge it"
+  explain: Squash-merges on GitHub and deletes the branch. You'll be asked to confirm.
+  command: gh-pr-merge
+  preset: { flags: [--squash, --delete-branch] }
+  priority: 77
+
+- id: gh-pr-ready
+  when: forge_cli == "gh" && pr && pr_state == "open" && pr_draft
+  title: "PR #{{.pr_number}} is a draft: mark it ready for review"
+  command: gh-pr-ready
+  priority: 66
+
+- id: gh-pr-update-branch
+  when: forge_cli == "gh" && pr && pr_state == "open" && pr_behind && !pr_conflicts
+  title: "PR #{{.pr_number}} is behind {{.pr_base}}: update it"
+  explain: Merges {{.pr_base}} into the PR's branch on GitHub. Pull afterwards to get it locally.
+  command: gh-pr-update-branch
+  priority: 64
+
+- id: gh-pr-checks-pending
+  when: forge_cli == "gh" && pr && pr_state == "open" && pr_checks == "pending"
+  title: "Watch PR #{{.pr_number}}'s checks"
+  command: gh-pr-checks
+  preset: { flags: [--watch] }
+  priority: 40
+
+- id: gh-pr-reopen
+  when: forge_cli == "gh" && pr && pr_state == "closed"
+  title: "PR #{{.pr_number}} was closed without merging: reopen it"
+  command: gh-pr-reopen
+  priority: 30
+
+- id: gh-review-queue
+  when: forge_cli == "gh" && forge_ready && review_queue > 0 && op == "" && clean
+  title: "{{.review_queue}} PR(s) waiting for your review: check one out"
+  command: gh-pr-checkout
+  priority: 22
+
+- id: gh-issue-develop
+  when: forge_cli == "gh" && forge_ready && op == "" && clean && branch != "" && branch == default_branch
+  title: "Start work on an issue"
+  explain: Creates a branch linked to the issue on GitHub and switches to it.
+  command: gh-issue-develop
+  priority: 12
+
+- id: gh-pr-web
+  when: forge_cli == "gh" && pr && pr_state == "open"
+  title: "Open PR #{{.pr_number}} in the browser"
+  command: gh-pr-view
+  preset: { flags: [--web] }
+  priority: 8
+
+# --- GitLab (glab) -------------------------------------------------------
+
+- id: glab-mr-create
+  when: 'forge_cli == "glab" && forge_ready && !pr && op == "" && !detached && has_commits && upstream != "" && !upstream_gone && ahead == 0 && default_branch != "" && branch != default_branch'
+  title: "Open a merge request for {{.branch}}"
+  command: glab-mr-create
+  preset: { flags: [--fill] }
+  priority: 74
+
+- id: glab-mr-changes-requested
+  when: forge_cli == "glab" && pr && pr_state == "open" && pr_review == "changes_requested"
+  title: "MR !{{.pr_number}}: changes requested, read the comments"
+  command: glab-mr-view
+  preset: { flags: [--comments] }
+  priority: 81
+
+- id: glab-ci-failing
+  when: forge_cli == "glab" && pr && pr_state == "open" && pr_checks == "failing"
+  title: "MR !{{.pr_number}}: the pipeline failed, see which jobs"
+  command: glab-ci-status
+  priority: 80
+
+- id: glab-ci-trace
+  when: forge_cli == "glab" && pr && pr_state == "open" && pr_checks == "failing"
+  title: "Show a failed job's log"
+  command: glab-ci-trace
+  priority: 79
+
+- id: glab-mr-merge
+  when: 'forge_cli == "glab" && pr && pr_state == "open" && !pr_draft && pr_review == "approved" && pr_checks in ["passing", "none"] && !pr_behind && !pr_conflicts && op == "" && ahead == 0'
+  title: "MR !{{.pr_number}} is ready: merge it"
+  explain: Squash-merges on GitLab and deletes the branch there. You'll be asked to confirm.
+  command: glab-mr-merge
+  preset: { flags: [--squash, --remove-source-branch] }
+  priority: 77
+
+- id: glab-mr-ready
+  when: forge_cli == "glab" && pr && pr_state == "open" && pr_draft
+  title: "MR !{{.pr_number}} is a draft: mark it ready"
+  command: glab-mr-ready
+  priority: 66
+
+- id: glab-mr-rebase
+  when: forge_cli == "glab" && pr && pr_state == "open" && pr_behind && !pr_conflicts
+  title: "MR !{{.pr_number}} needs a rebase onto {{.pr_base}}: rebase it on GitLab"
+  explain: GitLab rebases the branch on the server. Pull with --rebase afterwards.
+  command: glab-mr-rebase
+  priority: 64
+
+- id: glab-ci-pending
+  when: forge_cli == "glab" && pr && pr_state == "open" && pr_checks == "pending"
+  title: "Watch MR !{{.pr_number}}'s pipeline"
+  command: glab-ci-status
+  preset: { flags: [--live] }
+  priority: 40
+
+- id: glab-review-queue
+  when: forge_cli == "glab" && forge_ready && review_queue > 0 && op == "" && clean
+  title: "{{.review_queue}} MR(s) waiting for your review: check one out"
+  command: glab-mr-checkout
+  priority: 22
+
+- id: glab-mr-web
+  when: forge_cli == "glab" && pr && pr_state == "open"
+  title: "Open MR !{{.pr_number}} in the browser"
+  command: glab-mr-view
+  preset: { flags: [--web] }
+  priority: 8

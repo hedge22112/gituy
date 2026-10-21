@@ -76,6 +76,8 @@ func choicesFor(m *Model, b *build, a *spec.Arg) []choice {
 		return gitChoices(m, []string{"for-each-ref", "--sort=-creatordate", "--format=%(refname:short)%09%(contents:subject)", "refs/tags"})
 	case "worktrees":
 		return worktreeChoices(m)
+	case "prs", "review_prs", "issues", "ci_runs":
+		return forgeChoices(m, a.Source)
 	}
 	return nil
 }
@@ -94,6 +96,26 @@ func gitChoices(m *Model, args []string) []choice {
 		}
 		v, label, _ := strings.Cut(l, "\t")
 		cs = append(cs, choice{Value: v, Label: label})
+	}
+	return cs
+}
+
+// forgeChoices asks gh/glab for open PRs/MRs, ones waiting for your
+// review, issues, or CI runs for the current branch.
+func forgeChoices(m *Model, source string) []choice {
+	if m.forgeClient == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	items, err := m.forgeClient.Choices(ctx, source, m.state.Branch)
+	if err != nil {
+		m.setNotice("couldn't list them: %s", firstLine(err.Error()))
+		return nil
+	}
+	cs := make([]choice, len(items))
+	for i, it := range items {
+		cs[i] = choice{Value: it.Value, Label: it.Label}
 	}
 	return cs
 }

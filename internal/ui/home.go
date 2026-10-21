@@ -43,7 +43,7 @@ func (h *home) items(m *Model) []homeItem {
 	var sugs []homeItem
 	for i := range m.suggestions {
 		s := &m.suggestions[i]
-		if match(s.Title, s.Command.Title()) {
+		if match(s.Title, s.Command.Display()) {
 			sugs = append(sugs, homeItem{id: "s:" + s.ID, sug: s})
 		}
 	}
@@ -59,7 +59,12 @@ func (h *home) items(m *Model) []homeItem {
 		if m.NoRepo && !c.NoRepo {
 			continue
 		}
-		if match(c.Title(), c.Summary, c.ID) {
+		// gh/glab commands only when this repository is on that forge and
+		// the CLI is installed
+		if p := c.Program(); p != "git" && (p != m.forge.CLI() || !m.forge.Installed) {
+			continue
+		}
+		if match(c.Display(), c.Summary, c.ID) {
 			cmds = append(cmds, homeItem{id: "c:" + c.ID, cmd: c})
 		}
 	}
@@ -256,7 +261,7 @@ func (h *home) renderItem(it homeItem, selected bool) string {
 		}
 		return cursor(selected) + title
 	}
-	name := fmt.Sprintf("%-26s", it.cmd.Title())
+	name := fmt.Sprintf("%-26s", it.cmd.Display())
 	if selected {
 		name = stSelected.Render(name)
 	} else {

@@ -106,7 +106,7 @@ func run() int {
 
 		// The UI draws on stderr so --print output on stdout stays clean,
 		// e.g. cmd=$(gituy --print).
-		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithOutput(os.Stderr))
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithOutput(os.Stderr), tea.WithReportFocus())
 		bgCtx, cancel := context.WithCancel(ctx)
 		done := make(chan struct{})
 		if sup != nil {

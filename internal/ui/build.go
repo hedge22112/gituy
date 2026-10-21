@@ -189,7 +189,7 @@ func (b *build) editArg(m *Model, a *spec.Arg) {
 
 func (b *build) view(m *Model, height int) string {
 	var s strings.Builder
-	title := stBold.Render("git "+b.cmd.Title()) + "  " + stMuted.Render(b.cmd.Summary)
+	title := stBold.Render(b.cmd.Program()+" "+b.cmd.Title()) + "  " + stMuted.Render(b.cmd.Summary)
 	s.WriteString(title)
 	s.WriteString("\n")
 	used := 1

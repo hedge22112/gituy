@@ -15,6 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/hedge22112/gituy/internal/builder"
+	"github.com/hedge22112/gituy/internal/forge"
 	"github.com/hedge22112/gituy/internal/git"
 	"github.com/hedge22112/gituy/internal/spec"
 )
@@ -71,7 +72,7 @@ func Load(data []byte, specs *spec.Set) (*Engine, error) {
 	if err := yaml.Unmarshal(data, &rules); err != nil {
 		return nil, err
 	}
-	sample := Env(git.State{})
+	sample := EnvWith(git.State{}, forge.Status{})
 	for _, r := range rules {
 		c := specs.Get(r.Command)
 		if c == nil {
@@ -96,7 +97,41 @@ func Load(data []byte, specs *spec.Set) (*Engine, error) {
 }
 
 // Env exposes state to rule expressions and templates.
-func Env(st git.State) map[string]any {
+func Env(st git.State) map[string]any { return EnvWith(st, forge.Status{}) }
+
+// EnvWith also exposes GitHub/GitLab state:
+//
+//	forge ("github", "gitlab" or ""), forge_cli ("gh"/"glab"), forge_ready
+//	(installed and logged in), forge_needs_login, forge_host, pr (bool),
+//	pr_number, pr_state (open/merged/closed), pr_draft, pr_review
+//	(approved/changes_requested/review_required/""), pr_checks
+//	(passing/failing/pending/none), pr_behind, pr_conflicts, pr_base,
+//	review_queue
+func EnvWith(st git.State, fs forge.Status) map[string]any {
+	env := gitEnv(st)
+	pr := fs.PR
+	if pr == nil {
+		pr = &forge.PR{}
+	}
+	env["forge"] = string(fs.Kind)
+	env["forge_cli"] = fs.CLI()
+	env["forge_host"] = fs.Host
+	env["forge_ready"] = fs.Ready()
+	env["forge_needs_login"] = fs.Kind != forge.None && fs.Installed && !fs.Authed
+	env["pr"] = fs.Ready() && fs.PR != nil
+	env["pr_number"] = pr.Number
+	env["pr_state"] = pr.State
+	env["pr_draft"] = pr.Draft
+	env["pr_review"] = pr.Review
+	env["pr_checks"] = pr.Checks
+	env["pr_behind"] = pr.Behind
+	env["pr_conflicts"] = pr.Conflicts
+	env["pr_base"] = pr.Base
+	env["review_queue"] = fs.ReviewQueue
+	return env
+}
+
+func gitEnv(st git.State) map[string]any {
 	changed := append(append([]string{}, st.Unstaged...), st.Untracked...)
 	remote := ""
 	for _, r := range st.Remotes {
@@ -137,8 +172,13 @@ func Env(st git.State) map[string]any {
 }
 
 // Suggest returns matching suggestions, highest priority first.
-func (e *Engine) Suggest(st git.State) []Suggestion {
-	env := Env(st)
+func (e *Engine) Suggest(st git.State) []Suggestion { return e.SuggestWith(st, forge.Status{}) }
+
+// SuggestWith is Suggest with GitHub/GitLab state as well. When two
+// suggestions would run the same command, only the higher priority one
+// is kept.
+func (e *Engine) SuggestWith(st git.State, fs forge.Status) []Suggestion {
+	env := EnvWith(st, fs)
 	var out []Suggestion
 	for _, r := range e.rules {
 		ok, err := expr.Run(r.when, env)
@@ -163,7 +203,17 @@ func (e *Engine) Suggest(st git.State) []Suggestion {
 		env["item"] = ""
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Priority > out[j].Priority })
-	return out
+	seen := map[string]bool{}
+	kept := out[:0]
+	for _, s := range out {
+		argv, _ := builder.Build(s.Command, s.Selection)
+		key := strings.Join(argv, "\x00")
+		if !seen[key] {
+			seen[key] = true
+			kept = append(kept, s)
+		}
+	}
+	return kept
 }
 
 func (e *Engine) suggestion(r *Rule, env map[string]any) (Suggestion, error) {

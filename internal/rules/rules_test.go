@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/hedge22112/gituy/internal/builder"
+	"github.com/hedge22112/gituy/internal/forge"
 	"github.com/hedge22112/gituy/internal/git"
 	"github.com/hedge22112/gituy/internal/spec"
 )
@@ -210,4 +211,94 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestForgeSuggestions(t *testing.T) {
+	e := engine(t)
+	pushed := git.State{Branch: "feat", HasCommits: true, HeadPushed: true, Upstream: "origin/feat",
+		DefaultBranch: "main", Remotes: []string{"origin"}}
+	gh := func(pr *forge.PR) forge.Status {
+		return forge.Status{Kind: forge.GitHub, Host: "github.com", Installed: true, Authed: true, PR: pr}
+	}
+	glab := func(pr *forge.PR) forge.Status {
+		return forge.Status{Kind: forge.GitLab, Host: "gitlab.com", Installed: true, Authed: true, PR: pr}
+	}
+	open := func(mod func(*forge.PR)) *forge.PR {
+		p := &forge.PR{Number: 42, State: "open", Checks: "passing", Base: "main"}
+		mod(p)
+		return p
+	}
+	cases := []struct {
+		name  string
+		st    git.State
+		fs    forge.Status
+		first string
+		has   []string
+		not   []string
+	}{
+		{name: "pushed, no PR", st: pushed, fs: gh(nil), first: "gh pr create --fill"},
+		{name: "pushed, no MR", st: pushed, fs: glab(nil), first: "glab mr create --fill"},
+		{name: "not pushed yet: push first", st: git.State{Branch: "feat", HasCommits: true, DefaultBranch: "main", Remotes: []string{"origin"}},
+			fs: gh(nil), first: "git push --set-upstream origin feat", not: []string{"gh pr create --fill"}},
+		{name: "on default branch: no PR suggestion", st: git.State{Branch: "main", HasCommits: true, HeadPushed: true,
+			Upstream: "origin/main", DefaultBranch: "main", Remotes: []string{"origin"}},
+			fs: gh(nil), has: []string{"gh issue develop --checkout"}, not: []string{"gh pr create --fill"}},
+		{name: "failing checks", st: pushed, fs: gh(open(func(p *forge.PR) { p.Checks = "failing" })),
+			first: "gh pr checks", has: []string{"gh run view --log-failed"}, not: []string{"gh pr merge --squash --delete-branch"}},
+		{name: "changes requested", st: pushed, fs: gh(open(func(p *forge.PR) { p.Review = "changes_requested" })),
+			first: "gh pr view --comments"},
+		{name: "approved and green", st: pushed, fs: gh(open(func(p *forge.PR) { p.Review = "approved" })),
+			first: "gh pr merge --squash --delete-branch", has: []string{"gh pr view --web"}},
+		{name: "approved but unpushed commits", st: func() git.State { s := pushed; s.Ahead = 1; return s }(),
+			fs: gh(open(func(p *forge.PR) { p.Review = "approved" })), first: "git push",
+			not: []string{"gh pr merge --squash --delete-branch"}},
+		{name: "draft", st: pushed, fs: gh(open(func(p *forge.PR) { p.Draft = true; p.Review = "approved" })),
+			has: []string{"gh pr ready"}, not: []string{"gh pr merge --squash --delete-branch"}},
+		{name: "behind base", st: pushed, fs: gh(open(func(p *forge.PR) { p.Behind = true })), first: "gh pr update-branch"},
+		{name: "conflicts", st: pushed, fs: gh(open(func(p *forge.PR) { p.Conflicts = true; p.Behind = true })),
+			first: "git pull --rebase origin main", not: []string{"gh pr update-branch"}},
+		{name: "pending", st: pushed, fs: gh(open(func(p *forge.PR) { p.Checks = "pending" })), has: []string{"gh pr checks --watch"}},
+		{name: "merged: one switch suggestion, not two",
+			st: func() git.State { s := pushed; s.UpstreamGone = true; return s }(),
+			fs: gh(&forge.PR{Number: 42, State: "merged"}), first: "git switch main"},
+		{name: "closed", st: pushed, fs: gh(&forge.PR{Number: 42, State: "closed"}), has: []string{"gh pr reopen"}},
+		{name: "review queue", st: pushed, fs: func() forge.Status { s := gh(open(func(*forge.PR) {})); s.ReviewQueue = 2; return s }(),
+			has: []string{"gh pr checkout"}},
+		{name: "logged out", st: pushed, fs: forge.Status{Kind: forge.GitHub, Host: "ghe.corp", Installed: true},
+			has: []string{"gh auth login --hostname ghe.corp"}, not: []string{"gh pr create --fill"}},
+		{name: "not installed: nothing forge-related", st: pushed, fs: forge.Status{Kind: forge.GitHub, Host: "github.com"},
+			not: []string{"gh auth login --hostname github.com", "gh pr create --fill"}},
+		{name: "glab failing pipeline", st: pushed, fs: glab(open(func(p *forge.PR) { p.Checks = "failing" })),
+			first: "glab ci status", has: []string{"glab ci trace"}},
+		{name: "glab ready to merge", st: pushed, fs: glab(open(func(p *forge.PR) { p.Review = "approved" })),
+			first: "glab mr merge --squash --remove-source-branch"},
+		{name: "glab needs rebase", st: pushed, fs: glab(open(func(p *forge.PR) { p.Behind = true })), first: "glab mr rebase"},
+		{name: "glab draft", st: pushed, fs: glab(open(func(p *forge.PR) { p.Draft = true })), has: []string{"glab mr update --ready"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			sugs := e.SuggestWith(c.st, c.fs)
+			got := commands(sugs)
+			if c.first != "" && first(got) != c.first {
+				t.Errorf("first = %q, want %q (all: %q)", first(got), c.first, got)
+			}
+			for _, h := range c.has {
+				if !contains(got, h) {
+					t.Errorf("missing %q in %q", h, got)
+				}
+			}
+			for _, n := range c.not {
+				if contains(got, n) {
+					t.Errorf("unexpected %q in %q", n, got)
+				}
+			}
+			seen := map[string]bool{}
+			for _, g := range got {
+				if seen[g] {
+					t.Errorf("duplicate suggestion %q", g)
+				}
+				seen[g] = true
+			}
+		})
+	}
 }

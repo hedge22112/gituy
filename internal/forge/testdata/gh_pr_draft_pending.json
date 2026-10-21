@@ -1,0 +1,5 @@
+{"number":9,"title":"WIP","url":"https://github.com/o/r/pull/9","state":"OPEN","isDraft":true,
+ "reviewDecision":"REVIEW_REQUIRED","mergeStateStatus":"BEHIND","mergeable":"MERGEABLE","baseRefName":"develop",
+ "statusCheckRollup":[
+  {"__typename":"CheckRun","name":"test","status":"QUEUED","conclusion":""},
+  {"__typename":"StatusContext","context":"ci","state":"PENDING"}]}
