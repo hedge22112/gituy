@@ -48,8 +48,11 @@ func startWatching(t *testing.T, dir string, maxWatches int) *harness {
 	h := &harness{t: t, msgs: make(chan any, 1000)}
 	s := &Supervisor{Git: git.Runner{Dir: dir, Background: true}, Cfg: cfg, Send: func(m any) { h.msgs <- m }}
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go s.Run(ctx)
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+	// Stop watching before t.TempDir is removed: Windows can't delete
+	// directories that are still being watched.
+	t.Cleanup(func() { cancel(); <-done })
 	return h
 }
 

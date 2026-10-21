@@ -48,17 +48,27 @@ type Supervisor struct {
 	watching atomic.Bool // the watcher covers the working tree
 }
 
-// Run starts the background tasks and blocks until ctx is cancelled.
+// Run starts the background tasks and blocks until ctx is cancelled and
+// every task has stopped (so the file watcher has released its handles).
 func (s *Supervisor) Run(ctx context.Context) {
 	s.refresh = make(chan struct{}, 1)
 	s.fetchNow = make(chan struct{}, 1)
 
-	go s.pollLoop(ctx)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	start := func(f func(context.Context)) {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			f(ctx)
+		}()
+	}
+	start(s.pollLoop)
 	if s.Cfg.Status.Watch {
-		go s.watchLoop(ctx)
+		start(s.watchLoop)
 	}
 	if s.Cfg.Fetch.Enabled {
-		go s.fetchLoop(ctx)
+		start(s.fetchLoop)
 	}
 	s.Refresh()
 	for {

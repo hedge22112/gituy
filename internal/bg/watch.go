@@ -259,7 +259,18 @@ func (wt *watcher) relevant(ev fsnotify.Event) bool {
 	if ev.Op == fsnotify.Chmod {
 		return false // permission/metadata noise from indexers and antivirus
 	}
-	return relevantName(filepath.Base(ev.Name))
+	if !relevantName(filepath.Base(ev.Name)) {
+		return false
+	}
+	// Windows reports a write to a directory when something inside it
+	// changes. That change is already seen by the directory's own watch
+	// (or deliberately not, if the directory isn't watched).
+	if ev.Op == fsnotify.Write {
+		if info, err := os.Lstat(ev.Name); err == nil && info.IsDir() {
+			return false
+		}
+	}
+	return true
 }
 
 func relevantName(base string) bool {

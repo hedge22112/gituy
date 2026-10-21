@@ -8,13 +8,25 @@ on:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test -race ./...
+      - run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee test.log
+      - name: Report failing tests as annotations
+        if: failure()
+        run: |
+          grep -E -- '--- FAIL|_test\.go:[0-9]+|panic:|cannot|error' test.log | head -40 > fails.txt || true
+          # one annotation (they're capped per step), with the lines joined
+          echo "::error title=Test failures (${{ matrix.os }})::$(sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g' fails.txt)"
