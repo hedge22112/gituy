@@ -1,11 +1,14 @@
 package bg
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/pprof"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,7 +55,7 @@ func startWatching(t *testing.T, dir string, maxWatches int) *harness {
 	go func() { s.Run(ctx); close(done) }()
 	// Stop watching before t.TempDir is removed: Windows can't delete
 	// directories that are still being watched.
-	t.Cleanup(func() { cancel(); <-done })
+	t.Cleanup(func() { cancel(); waitStopped(t, done) })
 	return h
 }
 
@@ -158,6 +161,25 @@ func TestWatcherFallsBackWhenTooLarge(t *testing.T) {
 	sh(t, dir, "commit", "-q", "--allow-empty", "-m", "two")
 	if !h.nextState(5*time.Second, nil) {
 		t.Fatal("commit not noticed in git-only mode")
+	}
+}
+
+// waitStopped fails (instead of hanging the test binary) if the
+// supervisor doesn't stop, and shows where its goroutines are stuck.
+func waitStopped(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		var buf bytes.Buffer
+		pprof.Lookup("goroutine").WriteTo(&buf, 1)
+		var stuck []string
+		for _, l := range strings.Split(buf.String(), "\n") {
+			if strings.Contains(l, "gituy/internal") || strings.Contains(l, "fsnotify") {
+				stuck = append(stuck, strings.TrimSpace(l))
+			}
+		}
+		t.Fatalf("supervisor did not stop; stuck in:\n%s", strings.Join(stuck, "\n"))
 	}
 }
 

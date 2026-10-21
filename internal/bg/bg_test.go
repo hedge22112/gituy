@@ -60,7 +60,7 @@ func TestSupervisorFetchesOnStart(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { s.Run(ctx); close(done) }()
-	defer func() { cancel(); <-done }()
+	defer func() { cancel(); waitStopped(t, done) }()
 
 	select {
 	case f := <-got:

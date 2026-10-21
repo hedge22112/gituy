@@ -57,7 +57,7 @@ func (s *Supervisor) watchLoop(ctx context.Context) {
 		s.Send(WatchMsg{Mode: WatchOff, Reason: reason})
 		return
 	}
-	defer wt.w.Close()
+	defer wt.close()
 	s.setWatching(mode == WatchFull)
 	defer s.setWatching(false)
 	s.Send(WatchMsg{Mode: mode, Dirs: len(wt.watched), Reason: reason})
@@ -125,7 +125,7 @@ func (s *Supervisor) startWatcher(ctx context.Context) (*watcher, string, string
 	// The git directory comes first: HEAD, index, MERGE_HEAD, rebase
 	// state and refs are what most suggestions depend on.
 	if err := wt.addGitDirs(); err != nil {
-		w.Close()
+		wt.close()
 		return nil, "", err.Error()
 	}
 	if err := wt.addWorktree(ctx); err != nil {
@@ -133,6 +133,21 @@ func (s *Supervisor) startWatcher(ctx context.Context) (*watcher, string, string
 	}
 	wt.worktree = true
 	return wt, WatchFull, ""
+}
+
+// close stops the watcher. Some backends (Windows) block in Close until
+// their reader goroutine can deliver its pending event, so keep draining
+// the channels until they're closed.
+func (wt *watcher) close() {
+	go func() {
+		for range wt.w.Events {
+		}
+	}()
+	go func() {
+		for range wt.w.Errors {
+		}
+	}()
+	wt.w.Close()
 }
 
 func (wt *watcher) add(dir string) error {
