@@ -31,7 +31,15 @@ $ git add -- f.txt
   be built. Arguments come from pickers (branches, remotes, changed files,
   commits, stashes) with type-to-filter.
 - **The command is always visible** at the bottom of the screen and updates
-  as you change options. Press `e` to edit it by hand, or `c` to copy it.
+  as you change options. Press `c` to copy it, or `e` to edit it by hand:
+  the edit is parsed back into the builder's toggles, and anything gituy
+  doesn't recognise is passed through unchanged. On the home screen, `e`
+  lets you type any git command.
+- **Housekeeping**: suggests a safe `push --force-with-lease` after you
+  rebase or amend pushed commits, cleaning up after a branch's remote was
+  deleted, and deleting branches that are already merged.
+- **Outside a repository** it offers `git init` and `git clone`, then
+  carries on in the new repository.
 - **Safety**: options that can lose work are shown in red and need
   confirmation.
 - **Background tasks**: watches the working tree and `.git` for changes
@@ -43,11 +51,18 @@ $ git add -- f.txt
 
 ## Install
 
+Download a binary for Linux, macOS or Windows from the
+[releases page](https://github.com/hedge22112/gituy/releases), or a `.deb`,
+`.rpm` or `.apk` package. With Go:
+
 ```sh
 go install github.com/hedge22112/gituy/cmd/gituy@latest
 ```
 
 Requires git 2.30 or newer.
+
+The macOS binaries aren't notarized yet: if macOS blocks it, run
+`xattr -d com.apple.quarantine ./gituy`.
 
 ## Usage
 
@@ -66,7 +81,7 @@ gituy --no-fetch    # no background fetching this session
 | `x` | | clear an argument or value |
 | `r` | run highlighted command | run |
 | `c` | copy command | copy command |
-| `e` | | edit the command line by hand |
+| `e` | type a git command | edit the command line by hand |
 | `/` | filter | |
 | `f` | fetch now | |
 | `l` | activity log | |
@@ -129,3 +144,30 @@ at the top of `rules.yaml` for what rule conditions can use.
 ```sh
 go test -race ./...
 ```
+
+## Commands
+
+status, diff, add, restore, commit, reset, clean, fetch, pull, push,
+switch, branch (create, rename, delete, list, unset upstream), merge,
+rebase, cherry-pick, revert, checkout --ours/--theirs, log, stash (push,
+pop, apply, list, drop), tag (create, delete, list), remote (add, remove,
+list), worktree (add, list, remove), init, clone, plus continue/abort for
+merge, rebase, cherry-pick and revert. Any other git command can be typed
+with `e` and runs as typed.
+
+## Releasing
+
+Push a version tag; the release workflow builds every platform with
+GoReleaser and publishes a GitHub release:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+To also publish a Homebrew cask, create the `hedge22112/homebrew-tap`
+repository and add a `HOMEBREW_TAP_TOKEN` secret (a token that can push to
+it) to this repository. Until then that step is skipped.
+
+## License
+
+MIT

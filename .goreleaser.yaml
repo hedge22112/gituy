@@ -1,5 +1,12 @@
 version: 2
 
+project_name: gituy
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
 builds:
   - main: ./cmd/gituy
     binary: gituy
@@ -15,7 +22,7 @@ archives:
     format_overrides:
       - goos: windows
         formats: [zip]
-    files: [README.md]
+    files: [README.md, LICENSE]
 
 checksum:
   name_template: checksums.txt
@@ -23,8 +30,36 @@ checksum:
 nfpms:
   - package_name: gituy
     description: Interactive git command builder
+    homepage: https://github.com/hedge22112/gituy
+    maintainer: hedge22112
+    license: MIT
     formats: [deb, rpm, apk]
     dependencies: [git]
 
+# Published to github.com/hedge22112/homebrew-tap once that repository
+# exists and the HOMEBREW_TAP_TOKEN secret (a token that can push to it)
+# is set. Until then this step is skipped.
+homebrew_casks:
+  - name: gituy
+    repository:
+      owner: hedge22112
+      name: homebrew-tap
+      token: '{{ index .Env "HOMEBREW_TAP_TOKEN" }}'
+    homepage: https://github.com/hedge22112/gituy
+    description: Interactive git command builder
+    license: MIT
+    skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
+    dependencies:
+      - formula: git
+    hooks:
+      post:
+        # The binaries aren't notarized yet, so clear macOS's quarantine flag.
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/gituy"]
+          end
+
 changelog:
   sort: asc
+  filters:
+    exclude: ["^Merge "]
