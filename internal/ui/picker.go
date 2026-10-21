@@ -69,6 +69,13 @@ func choicesFor(m *Model, b *build, a *spec.Arg) []choice {
 		return gitChoices(m, []string{"log", "--format=%h%x09%s", "-n", "50"})
 	case "stashes":
 		return gitChoices(m, []string{"stash", "list", "--format=%gd%x09%s"})
+	case "other_commits":
+		// commits on other branches that aren't on this one yet
+		return gitChoices(m, []string{"log", "--all", "--not", "HEAD", "--format=%h%x09%s (%D)", "-n", "50"})
+	case "tags":
+		return gitChoices(m, []string{"for-each-ref", "--sort=-creatordate", "--format=%(refname:short)%09%(contents:subject)", "refs/tags"})
+	case "worktrees":
+		return worktreeChoices(m)
 	}
 	return nil
 }
@@ -87,6 +94,37 @@ func gitChoices(m *Model, args []string) []choice {
 		}
 		v, label, _ := strings.Cut(l, "\t")
 		cs = append(cs, choice{Value: v, Label: label})
+	}
+	return cs
+}
+
+// worktreeChoices lists linked worktrees (not the main one, which can't
+// be removed) from `git worktree list --porcelain`.
+func worktreeChoices(m *Model) []choice {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := m.Git.Run(ctx, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil
+	}
+	var cs []choice
+	for i, block := range strings.Split(strings.TrimSpace(out), "\n\n") {
+		if i == 0 {
+			continue // the main worktree
+		}
+		var c choice
+		for _, l := range strings.Split(block, "\n") {
+			if p, ok := strings.CutPrefix(l, "worktree "); ok {
+				c.Value = p
+			} else if b, ok := strings.CutPrefix(l, "branch refs/heads/"); ok {
+				c.Label = b
+			} else if l == "detached" {
+				c.Label = "detached"
+			}
+		}
+		if c.Value != "" {
+			cs = append(cs, c)
+		}
 	}
 	return cs
 }

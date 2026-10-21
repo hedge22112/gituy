@@ -245,3 +245,61 @@ func TestStateDetachedWithStash(t *testing.T) {
 		t.Errorf("got %+v", st)
 	}
 }
+
+// TestStateBranchHousekeeping covers the default branch, merged branches,
+// deleted upstreams and the last action.
+func TestStateBranchHousekeeping(t *testing.T) {
+	root := t.TempDir()
+	remote := filepath.Join(root, "remote.git")
+	newRepo(t, remote).git("config", "core.bare", "true")
+
+	seed := newRepo(t, filepath.Join(root, "seed"))
+	seed.commit("f.txt", "1\n", "one")
+	seed.git("remote", "add", "origin", remote)
+	seed.git("push", "-q", "origin", "main")
+	seed.git("symbolic-ref", "HEAD", "refs/heads/main")
+
+	// a clone gets origin/HEAD, so the default branch comes from the remote
+	r := &repo{t: t, dir: filepath.Join(root, "work")}
+	(&repo{t: t, dir: root}).git("clone", "-q", remote, r.dir)
+	r.git("config", "user.email", "test@example.com")
+	r.git("config", "user.name", "Test")
+
+	// feature: pushed, then deleted on the remote
+	r.git("switch", "-q", "-c", "feature")
+	r.commit("g.txt", "g\n", "feature work")
+	r.git("push", "-q", "-u", "origin", "feature")
+	r.git("push", "-q", "origin", "--delete", "feature")
+	r.git("fetch", "-q", "--prune")
+
+	st := r.state()
+	if !st.UpstreamGone || st.Upstream != "origin/feature" {
+		t.Errorf("on feature: upstream=%q gone=%v", st.Upstream, st.UpstreamGone)
+	}
+	if st.DefaultBranch != "main" {
+		t.Errorf("default branch = %q", st.DefaultBranch)
+	}
+	if len(st.MergedBranches) != 0 {
+		t.Errorf("merged branches only computed on the default branch, got %v", st.MergedBranches)
+	}
+
+	// back on main: feature has a gone upstream; "done" is merged
+	r.git("switch", "-q", "main")
+	r.git("branch", "done")
+	st = r.state()
+	if st.UpstreamGone {
+		t.Error("main's upstream is not gone")
+	}
+	if !reflect.DeepEqual(st.GoneBranches, []string{"feature"}) {
+		t.Errorf("gone = %v", st.GoneBranches)
+	}
+	if !reflect.DeepEqual(st.MergedBranches, []string{"done"}) {
+		t.Errorf("merged = %v", st.MergedBranches)
+	}
+
+	r.commit("h.txt", "h\n", "local")
+	r.git("commit", "-q", "--amend", "-m", "local, amended")
+	if st = r.state(); !strings.HasPrefix(st.LastAction, "commit (amend)") {
+		t.Errorf("last action = %q", st.LastAction)
+	}
+}

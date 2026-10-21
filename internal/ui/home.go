@@ -56,6 +56,9 @@ func (h *home) items(m *Model) []homeItem {
 	}
 	var cmds []homeItem
 	for _, c := range m.Specs.All() {
+		if m.NoRepo && !c.NoRepo {
+			continue
+		}
 		if match(c.Title(), c.Summary, c.ID) {
 			cmds = append(cmds, homeItem{id: "c:" + c.ID, cmd: c})
 		}

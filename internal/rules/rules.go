@@ -126,6 +126,13 @@ func Env(st git.State) map[string]any {
 		"remote":      remote,
 		"clean":       st.Clean(),
 		"item":        "",
+
+		"in_repo":         !st.NotRepo,
+		"upstream_gone":   st.UpstreamGone,
+		"last_action":     st.LastAction,
+		"default_branch":  st.DefaultBranch,
+		"merged_branches": st.MergedBranches,
+		"gone_branches":   st.GoneBranches,
 	}
 }
 
@@ -195,8 +202,12 @@ func (e *Engine) suggestion(r *Rule, env map[string]any) (Suggestion, error) {
 			}
 		}
 	}
+	explain, err := expand(r.Explain, env)
+	if err != nil {
+		return Suggestion{}, err
+	}
 	return Suggestion{
-		ID: r.ID, Title: title.String(), Explain: r.Explain,
+		ID: r.ID, Title: title.String(), Explain: explain,
 		Command: c, Selection: sel, Priority: r.Priority,
 	}, nil
 }

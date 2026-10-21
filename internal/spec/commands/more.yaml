@@ -1,0 +1,247 @@
+# History editing, tags, remotes, branches, worktrees, and starting a repo.
+
+- id: cherry-pick
+  cmd: [cherry-pick]
+  summary: Copy commits from another branch onto this one
+  options:
+    - flag: -x
+      desc: Note the original commit in the message ("cherry picked from ...")
+    - flag: --no-commit
+      desc: Apply the changes but don't commit them
+    - flag: --edit
+      desc: Edit the commit message before committing
+    - flag: --signoff
+      desc: Add a Signed-off-by trailer
+    - flag: --mainline
+      desc: For a merge commit, which parent is the mainline (usually 1)
+      value: parent
+  args:
+    - name: commits
+      desc: Commits to copy, oldest first
+      source: other_commits
+      multi: true
+      required: true
+
+- id: revert
+  cmd: [revert]
+  summary: Make a new commit that undoes an earlier one
+  help: |
+    revert is the safe way to undo a commit that's already been pushed:
+    history isn't rewritten, a new commit reverses the changes.
+  options:
+    - flag: --no-commit
+      desc: Undo the changes in your working tree but don't commit
+    - flag: --no-edit
+      desc: Use the default message ("Revert ...") without opening an editor
+    - flag: --mainline
+      desc: For a merge commit, which parent to keep (usually 1)
+      value: parent
+  args:
+    - name: commits
+      desc: Commits to undo
+      source: commits
+      multi: true
+      required: true
+
+- id: revert-continue
+  cmd: [revert]
+  fixed: [--continue]
+  summary: Continue the revert after resolving conflicts
+
+- id: revert-abort
+  cmd: [revert]
+  fixed: [--abort]
+  summary: Give up on the revert
+
+- id: tag-create
+  cmd: [tag]
+  label: tag
+  summary: Mark a commit with a name, e.g. a release version
+  options:
+    - flag: --annotate
+      desc: Make an annotated tag (has a message, author and date; best for releases)
+    - flag: -m
+      desc: Tag message (makes it annotated)
+      value: message
+    - flag: --sign
+      desc: Make a GPG-signed tag
+    - flag: --force
+      desc: Replace an existing tag with the same name
+      danger: low
+  args:
+    - name: name
+      desc: Tag name, e.g. v1.2.0
+      required: true
+    - name: commit
+      desc: Commit to tag (default HEAD)
+      source: commits
+
+- id: tag-delete
+  cmd: [tag]
+  label: tag -d
+  summary: Delete a local tag
+  options:
+    - flag: -d
+      desc: Delete the tag
+      group: mode
+      default: true
+  args:
+    - name: tag
+      desc: Tag to delete
+      source: tags
+      required: true
+
+- id: tag-list
+  cmd: [tag]
+  fixed: [--list]
+  summary: List tags
+  options:
+    - flag: -n
+      desc: Show the first line of each tag's message
+    - flag: --sort=-creatordate
+      desc: Newest first
+
+- id: remote-list
+  cmd: [remote]
+  fixed: [-v]
+  summary: List remotes and their URLs
+
+- id: remote-add
+  cmd: [remote, add]
+  summary: Connect another remote repository
+  options:
+    - flag: --fetch
+      desc: Fetch from it straight away
+  args:
+    - name: name
+      desc: Short name, e.g. upstream
+      required: true
+    - name: url
+      desc: Repository URL
+      required: true
+
+- id: remote-remove
+  cmd: [remote, remove]
+  summary: Disconnect a remote (and delete its remote-tracking branches)
+  danger: low
+  args:
+    - name: remote
+      desc: Remote to remove
+      source: remotes
+      required: true
+
+- id: branch-create
+  cmd: [branch]
+  label: branch (create)
+  summary: Create a branch without switching to it
+  options:
+    - flag: --track
+      desc: Set the new branch's upstream to the starting branch
+      group: track
+    - flag: --no-track
+      desc: Don't set an upstream
+      group: track
+  args:
+    - name: name
+      desc: New branch name
+      required: true
+    - name: start
+      desc: Where it starts (default the current commit)
+      source: all_branches
+
+- id: branch-rename
+  cmd: [branch]
+  label: branch -m
+  summary: Rename the current branch
+  options:
+    - flag: -m
+      desc: Rename (refuses if the new name exists)
+      group: mode
+      default: true
+    - flag: -M
+      desc: Rename even if a branch with the new name exists (replaces it)
+      group: mode
+      danger: high
+  args:
+    - name: name
+      desc: New name
+      required: true
+
+- id: branch-unset-upstream
+  cmd: [branch]
+  fixed: [--unset-upstream]
+  summary: Stop tracking an upstream branch
+  args:
+    - name: branch
+      desc: Branch (default the current one)
+      source: branches
+
+- id: worktree-list
+  cmd: [worktree, list]
+  summary: List worktrees (extra checkouts of this repository)
+
+- id: worktree-add
+  cmd: [worktree, add]
+  summary: Check out a branch in another directory, alongside this one
+  options:
+    - flag: -b
+      desc: Create a new branch for the worktree
+      value: branch
+    - flag: --detach
+      desc: Check out a commit without a branch
+  args:
+    - name: path
+      desc: Directory to create, e.g. ../myrepo-hotfix
+      required: true
+    - name: branch
+      desc: Branch or commit to check out
+      source: all_branches
+
+- id: worktree-remove
+  cmd: [worktree, remove]
+  summary: Delete a worktree's directory
+  options:
+    - flag: --force
+      desc: Remove even if it has uncommitted changes
+      danger: high
+  args:
+    - name: path
+      desc: Worktree to remove
+      source: worktrees
+      required: true
+
+- id: init
+  cmd: [init]
+  summary: Create a new git repository
+  no_repo: true
+  options:
+    - flag: --initial-branch
+      desc: Name of the first branch, e.g. main
+      value: name
+    - flag: --bare
+      desc: A repository with no working tree (for hosting)
+  args:
+    - name: directory
+      desc: Directory to create it in (default here)
+
+- id: clone
+  cmd: [clone]
+  summary: Download a copy of a repository
+  no_repo: true
+  options:
+    - flag: --depth
+      desc: Only fetch the most recent commits (faster for big repos)
+      value: commits
+    - flag: --branch
+      desc: Check out this branch instead of the default
+      value: branch
+    - flag: --single-branch
+      desc: Only fetch one branch
+    - flag: --recurse-submodules
+      desc: Also clone submodules
+  args:
+    - name: url
+      desc: Repository URL
+      required: true
+    - name: directory
+      desc: Directory to clone into (default the repository's name)

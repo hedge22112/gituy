@@ -31,6 +31,7 @@ type Command struct {
 	Summary string   `yaml:"summary"`
 	Help    string   `yaml:"help"`
 	Danger  string   `yaml:"danger"`
+	NoRepo  bool     `yaml:"no_repo"` // usable outside a repository (init, clone)
 	Options []Option `yaml:"options"`
 	Args    []Arg    `yaml:"args"`
 }
@@ -64,6 +65,7 @@ var Sources = map[string]bool{
 	"text": true, "branches": true, "remote_branches": true, "all_branches": true,
 	"remotes": true, "changed": true, "unstaged": true, "staged": true,
 	"untracked": true, "conflicted": true, "commits": true, "stashes": true,
+	"other_commits": true, "tags": true, "worktrees": true,
 }
 
 // Set is a loaded collection of commands.

@@ -40,7 +40,7 @@ func TestBuild(t *testing.T) {
 		{name: "required arg", id: "restore", want: []string{"git", "restore"}, problems: 1},
 		{name: "subcommand + fixed", id: "merge-continue", want: []string{"git", "merge", "--continue"}},
 		{name: "default flag", id: "branch-delete", args: map[string][]string{"branch": {"old"}},
-			want: []string{"git", "branch", "--delete", "old"}},
+			want: []string{"git", "branch", "-d", "old"}},
 		{name: "stash", id: "stash-push", flags: []string{"--include-untracked"},
 			want: []string{"git", "stash", "push", "--include-untracked"}},
 	}

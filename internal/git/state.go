@@ -37,6 +37,13 @@ type State struct {
 	Remotes    []string
 	Branches   []string
 	RemoteRefs []string
+
+	NotRepo        bool     // gituy was started outside a repository
+	UpstreamGone   bool     // the upstream branch was deleted on the remote
+	LastAction     string   // newest HEAD reflog subject, e.g. "rebase (finish): ..."
+	DefaultBranch  string   // e.g. "main", from origin/HEAD or local main/master
+	MergedBranches []string // local branches merged into HEAD (only on the default branch)
+	GoneBranches   []string // other local branches whose upstream was deleted
 }
 
 // Clean reports whether there is nothing to commit.
@@ -62,8 +69,14 @@ func (r Runner) ReadState(ctx context.Context) (State, error) {
 	if out, err := r.Run(ctx, "remote"); err == nil {
 		st.Remotes = lines(out)
 	}
-	if out, err := r.Run(ctx, "for-each-ref", "--format=%(refname:short)", "refs/heads"); err == nil {
-		st.Branches = lines(out)
+	if out, err := r.Run(ctx, "for-each-ref", "--format=%(refname:short)%09%(upstream:track)", "refs/heads"); err == nil {
+		for _, l := range lines(out) {
+			name, track, _ := strings.Cut(l, "\t")
+			st.Branches = append(st.Branches, name)
+			if track == "[gone]" && name != st.Branch {
+				st.GoneBranches = append(st.GoneBranches, name)
+			}
+		}
 	}
 	if out, err := r.Run(ctx, "for-each-ref", "--format=%(refname:short)", "refs/remotes"); err == nil {
 		for _, ref := range lines(out) {
@@ -77,8 +90,48 @@ func (r Runner) ReadState(ctx context.Context) (State, error) {
 		if out, err := r.Run(ctx, "branch", "-r", "--contains", "HEAD"); err == nil {
 			st.HeadPushed = strings.TrimSpace(out) != ""
 		}
+		if out, err := r.Run(ctx, "reflog", "-1", "--format=%gs"); err == nil {
+			st.LastAction = strings.TrimSpace(out)
+		}
+	}
+	st.DefaultBranch = r.defaultBranch(ctx, st)
+	if st.Branch != "" && st.Branch == st.DefaultBranch {
+		if out, err := r.Run(ctx, "branch", "--merged", "HEAD", "--format=%(refname:short)"); err == nil {
+			for _, b := range lines(out) {
+				if b != st.Branch {
+					st.MergedBranches = append(st.MergedBranches, b)
+				}
+			}
+		}
 	}
 	return st, nil
+}
+
+// defaultBranch is the remote's default branch (origin/HEAD), falling
+// back to a local main or master.
+func (r Runner) defaultBranch(ctx context.Context, st State) string {
+	remote := ""
+	for _, rm := range st.Remotes {
+		if rm == "origin" || remote == "" {
+			remote = rm
+		}
+	}
+	if remote != "" {
+		out, err := r.Run(ctx, "symbolic-ref", "--quiet", "--short", "refs/remotes/"+remote+"/HEAD")
+		if err == nil {
+			if _, name, ok := strings.Cut(strings.TrimSpace(out), "/"); ok {
+				return name
+			}
+		}
+	}
+	for _, b := range []string{"main", "master"} {
+		for _, have := range st.Branches {
+			if have == b {
+				return b
+			}
+		}
+	}
+	return ""
 }
 
 // parseStatus parses `git status --porcelain=v2 --branch -z`.
@@ -133,7 +186,9 @@ func parseHeader(f string, st *State) {
 		}
 	case "branch.upstream":
 		st.Upstream = parts[2]
+		st.UpstreamGone = true // until branch.ab shows the upstream exists
 	case "branch.ab":
+		st.UpstreamGone = false
 		if len(parts) == 4 {
 			st.Ahead, _ = strconv.Atoi(strings.TrimPrefix(parts[2], "+"))
 			st.Behind, _ = strconv.Atoi(strings.TrimPrefix(parts[3], "-"))

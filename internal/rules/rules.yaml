@@ -1,7 +1,8 @@
 # Suggestion rules. `when` is an expr expression over the repo state:
 #   branch, detached, has_commits, upstream, ahead, behind, staged, unstaged,
 #   untracked, changed, conflicted, op, stash, head_pushed, remotes, remote,
-#   clean
+#   clean, in_repo, upstream_gone, last_action, default_branch,
+#   merged_branches, gone_branches
 # Titles and preset strings may use templates ({{.branch}}); "@list" in an
 # arg preset expands to every item of that list. `for_each` makes one
 # suggestion per item of a list, available as {{.item}}.
@@ -72,7 +73,30 @@
   command: cherry-pick-abort
   priority: 60
 
+- id: revert-continue
+  when: op == "revert" && len(conflicted) == 0
+  title: "Continue the revert"
+  command: revert-continue
+  priority: 100
+
+- id: revert-abort
+  when: op == "revert"
+  title: "Abort the revert"
+  command: revert-abort
+  priority: 60
+
 # --- Syncing with the remote --------------------------------------------
+
+- id: force-push-rewritten
+  when: 'op == "" && upstream != "" && !upstream_gone && ahead > 0 && behind > 0 && last_action matches "^(rebase|commit \\(amend\\)|reset)"'
+  title: "Update {{.upstream}} with your rewritten history (force, safely)"
+  explain: |
+    You rebased or amended commits that were already pushed, so your branch
+    and {{.upstream}} now disagree. --force-with-lease replaces the remote
+    branch only if nobody else pushed to it since you last fetched.
+  command: push
+  preset: { flags: [--force-with-lease] }
+  priority: 88
 
 - id: pull-ff
   when: op == "" && upstream != "" && behind > 0 && ahead == 0
@@ -115,6 +139,23 @@
     flags: [--set-upstream]
     args: { remote: ["{{.remote}}"], branch: ["{{.branch}}"] }
   priority: 65
+
+- id: upstream-gone-switch
+  when: op == "" && upstream_gone && !detached && default_branch != "" && branch != default_branch
+  title: "{{.upstream}} was deleted: switch back to {{.default_branch}}"
+  explain: |
+    The remote branch you were tracking is gone, usually because its pull
+    request was merged. Switch to {{.default_branch}}, pull, then delete
+    {{.branch}}.
+  command: switch
+  preset: { args: { branch: ["{{.default_branch}}"] } }
+  priority: 72
+
+- id: upstream-gone-unset
+  when: op == "" && upstream_gone && !detached
+  title: "Stop tracking the deleted {{.upstream}}"
+  command: branch-unset-upstream
+  priority: 30
 
 - id: fetch-all
   when: op == "" && len(remotes) > 0
@@ -180,6 +221,27 @@
   preset: { flags: [--soft], args: { target: ["HEAD~1"] } }
   priority: 20
 
+# --- Housekeeping -------------------------------------------------------
+
+- id: delete-gone
+  when: op == ""
+  for_each: gone_branches
+  title: "Delete {{.item}} (its remote branch was deleted)"
+  explain: |
+    If it was squash-merged, git will refuse because it can't see the merge.
+    Check it's really done, then use -D.
+  command: branch-delete
+  preset: { args: { branch: ["{{.item}}"] } }
+  priority: 16
+
+- id: delete-merged
+  when: op == "" && branch != "" && branch == default_branch
+  for_each: merged_branches
+  title: "Delete {{.item}} (already merged into {{.branch}})"
+  command: branch-delete
+  preset: { args: { branch: ["{{.item}}"] } }
+  priority: 15
+
 # --- Detached HEAD ------------------------------------------------------
 
 - id: detached-branch
@@ -196,3 +258,17 @@
   command: switch
   preset: { args: { branch: ["-"] } }
   priority: 70
+
+# --- Not in a repository ------------------------------------------------
+
+- id: init
+  when: "!in_repo"
+  title: "Create a new repository here"
+  command: init
+  priority: 100
+
+- id: clone
+  when: "!in_repo"
+  title: "Clone a repository"
+  command: clone
+  priority: 90

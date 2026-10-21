@@ -93,6 +93,52 @@ func TestSuggestions(t *testing.T) {
 			first: "git stash pop",
 		},
 		{
+			name: "rebased after pushing",
+			state: git.State{Branch: "feat", HasCommits: true, Upstream: "origin/feat", Ahead: 3, Behind: 2,
+				Remotes: []string{"origin"}, LastAction: "rebase (finish): returning to refs/heads/feat"},
+			first: "git push --force-with-lease",
+			has:   []string{"git pull --rebase"},
+		},
+		{
+			name: "amended after pushing",
+			state: git.State{Branch: "feat", HasCommits: true, Upstream: "origin/feat", Ahead: 1, Behind: 1,
+				Remotes: []string{"origin"}, LastAction: "commit (amend): fix"},
+			first: "git push --force-with-lease",
+		},
+		{
+			name: "diverged without rewriting",
+			state: git.State{Branch: "feat", HasCommits: true, Upstream: "origin/feat", Ahead: 1, Behind: 1,
+				Remotes: []string{"origin"}, LastAction: "commit: more work"},
+			first: "git pull --rebase",
+			not:   []string{"git push --force-with-lease"},
+		},
+		{
+			name: "upstream deleted",
+			state: git.State{Branch: "feat", HasCommits: true, HeadPushed: true, Upstream: "origin/feat", UpstreamGone: true,
+				DefaultBranch: "main", Remotes: []string{"origin"}},
+			first: "git switch main",
+			has:   []string{"git branch --unset-upstream"},
+			not:   []string{"git push --set-upstream origin feat"},
+		},
+		{
+			name: "housekeeping on default branch",
+			state: git.State{Branch: "main", HasCommits: true, HeadPushed: true, DefaultBranch: "main",
+				MergedBranches: []string{"done"}, GoneBranches: []string{"old-pr"}},
+			has: []string{"git branch -d done", "git branch -d old-pr"},
+		},
+		{
+			name: "merged branches ignored off the default branch",
+			state: git.State{Branch: "feat", HasCommits: true, HeadPushed: true, DefaultBranch: "main",
+				MergedBranches: []string{"main"}},
+			not: []string{"git branch -d main"},
+		},
+		{
+			name:  "not a repository",
+			state: git.State{NotRepo: true},
+			first: "git init",
+			has:   []string{"git clone"},
+		},
+		{
 			name:  "detached",
 			state: git.State{Detached: true, HasCommits: true, HeadPushed: true},
 			first: "git switch --create",
@@ -116,6 +162,18 @@ func TestSuggestions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExplainIsTemplated(t *testing.T) {
+	st := git.State{Branch: "feat", HasCommits: true, Upstream: "origin/feat", UpstreamGone: true, DefaultBranch: "main"}
+	for _, s := range engine(t).Suggest(st) {
+		if strings.Contains(s.Explain, "{{") {
+			t.Errorf("%s: explain not expanded: %q", s.ID, s.Explain)
+		}
+		if s.ID == "upstream-gone-switch" && !strings.Contains(s.Explain, "Switch to main") {
+			t.Errorf("explain = %q", s.Explain)
+		}
 	}
 }
 

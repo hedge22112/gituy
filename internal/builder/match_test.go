@@ -37,6 +37,14 @@ func TestMatch(t *testing.T) {
 			values: map[string]string{"--source": "HEAD~2"}, args: map[string][]string{"paths": {"f.go"}}},
 		{line: `git switch -`, id: "switch", args: map[string][]string{"branch": {"-"}}},
 		{line: `git frobnicate --x y`, id: "custom", trailing: []string{"--x", "y"}},
+		{line: `git branch newname`, id: "branch-create", args: map[string][]string{"name": {"newname"}}},
+		{line: `git branch -m better`, id: "branch-rename", flags: []string{"-m"}, args: map[string][]string{"name": {"better"}}},
+		{line: `git branch -vv`, id: "branch-list", flags: []string{"-vv"}},
+		{line: `git tag v1.0.0`, id: "tag-create", args: map[string][]string{"name": {"v1.0.0"}}},
+		{line: `git tag -d v1.0.0`, id: "tag-delete", flags: []string{"-d"}, args: map[string][]string{"tag": {"v1.0.0"}}},
+		{line: `git tag --list -n`, id: "tag-list", flags: []string{"-n"}},
+		{line: `git clone --depth 1 https://example.com/r.git`, id: "clone", flags: []string{"--depth"},
+			values: map[string]string{"--depth": "1"}, args: map[string][]string{"url": {"https://example.com/r.git"}}},
 	}
 	for _, c := range cases {
 		t.Run(c.line, func(t *testing.T) {

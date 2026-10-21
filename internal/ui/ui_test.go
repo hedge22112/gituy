@@ -177,3 +177,28 @@ func TestTypeCommandFromHome(t *testing.T) {
 		t.Fatalf("result = %v", m.Result.Argv)
 	}
 }
+
+func TestNotARepository(t *testing.T) {
+	specs, _ := spec.Builtin()
+	eng, _ := rules.Builtin(specs)
+	m := New(Model{Specs: specs, Rules: eng, Cfg: config.Default(), NoRepo: true})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.Update(m.Init()())
+
+	if v := m.View(); !strings.Contains(v, "not a git repository") || !strings.Contains(v, "Create a new repository here") {
+		t.Fatalf("view:\n%s", v)
+	}
+	var ids []string
+	for _, it := range m.top().(*home).items(m) {
+		if it.cmd != nil {
+			ids = append(ids, it.cmd.ID)
+		}
+	}
+	if strings.Join(ids, ",") != "clone,init" {
+		t.Errorf("commands offered = %v", ids)
+	}
+	keys(m, "r")
+	if strings.Join(m.Result.Argv, " ") != "git init" {
+		t.Errorf("result = %v", m.Result.Argv)
+	}
+}

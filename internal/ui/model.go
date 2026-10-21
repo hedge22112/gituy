@@ -5,6 +5,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -61,6 +62,9 @@ type Model struct {
 	Result Result
 	// Activity is shared with main so it survives UI restarts.
 	Activity *[]Activity
+	// NoRepo means gituy was started outside a repository: only commands
+	// that make one (init, clone) are offered.
+	NoRepo bool
 
 	state       git.State
 	stateErr    error
@@ -86,7 +90,14 @@ func New(m Model) *Model {
 	return &m
 }
 
-func (m *Model) Init() tea.Cmd { return nil }
+// Init shows the not-a-repository suggestions straight away; inside a
+// repository the supervisor sends the first state.
+func (m *Model) Init() tea.Cmd {
+	if m.NoRepo {
+		return func() tea.Msg { return bg.StateMsg{State: git.State{NotRepo: true}} }
+	}
+	return nil
+}
 
 func (m *Model) top() screen { return m.stack[len(m.stack)-1] }
 
@@ -252,6 +263,10 @@ func (m *Model) stateBar() string {
 	}
 	if !m.loaded {
 		return stMuted.Render("reading repository…")
+	}
+	if m.state.NotRepo {
+		dir, _ := filepath.Abs(m.Git.Dir)
+		return stWarn.Render("not a git repository") + stMuted.Render(" · "+dir)
 	}
 	st := m.state
 	var parts []string

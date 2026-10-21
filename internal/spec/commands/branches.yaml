@@ -24,10 +24,10 @@
 
 - id: branch-delete
   cmd: [branch]
-  label: branch --delete
+  label: branch -d
   summary: Delete a local branch
   options:
-    - flag: --delete
+    - flag: -d
       desc: Delete only if it has been merged
       group: mode
       default: true

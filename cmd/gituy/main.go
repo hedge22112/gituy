@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -56,25 +58,10 @@ func run() int {
 	}
 
 	ctx := context.Background()
-	fg := git.Runner{Dir: *dir}
-	if err := checkGit(ctx, fg); err != nil {
+	if err := checkGit(ctx, git.Runner{Dir: *dir}); err != nil {
 		fmt.Fprintln(os.Stderr, "gituy:", err)
 		return 1
 	}
-	if !fg.IsRepo(ctx) {
-		fmt.Fprintln(os.Stderr, "gituy: not inside a git repository (try git init or git clone)")
-		return 1
-	}
-	gitDir, _ := fg.GitDir(ctx)
-	cfg, err := config.Load(gitDir)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "gituy: config:", err)
-		return 1
-	}
-	if *noFetch {
-		cfg.Fetch.Enabled = false
-	}
-
 	specs, err := spec.Builtin()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "gituy: command specs:", err)
@@ -86,26 +73,54 @@ func run() int {
 		return 1
 	}
 
+	workDir := *dir
 	var activity []ui.Activity
 	var lastFetch time.Time
 	for {
-		model := ui.New(ui.Model{Specs: specs, Rules: engine, Cfg: cfg, Git: fg, Activity: &activity})
-		sup := &bg.Supervisor{
-			Git:       git.Runner{Dir: *dir, Background: true},
-			Cfg:       cfg,
-			LastFetch: lastFetch,
+		// Checked every time: running init or clone can create a repo.
+		fg := git.Runner{Dir: workDir}
+		inRepo := fg.IsRepo(ctx)
+		gitDir := ""
+		if inRepo {
+			gitDir, _ = fg.GitDir(ctx)
 		}
-		model.Sup = sup
+		cfg, err := config.Load(gitDir)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "gituy: config:", err)
+			return 1
+		}
+		if *noFetch {
+			cfg.Fetch.Enabled = false
+		}
+
+		model := ui.New(ui.Model{Specs: specs, Rules: engine, Cfg: cfg, Git: fg, Activity: &activity, NoRepo: !inRepo})
+		var sup *bg.Supervisor
+		if inRepo {
+			sup = &bg.Supervisor{
+				Git:       git.Runner{Dir: workDir, Background: true},
+				Cfg:       cfg,
+				LastFetch: lastFetch,
+			}
+			model.Sup = sup
+		}
 
 		// The UI draws on stderr so --print output on stdout stays clean,
 		// e.g. cmd=$(gituy --print).
 		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithOutput(os.Stderr))
-		sup.Send = func(msg any) { p.Send(msg) }
 		bgCtx, cancel := context.WithCancel(ctx)
-		go sup.Run(bgCtx)
-		_, err := p.Run()
+		done := make(chan struct{})
+		if sup != nil {
+			sup.Send = func(msg any) { p.Send(msg) }
+			go func() { sup.Run(bgCtx); close(done) }()
+		} else {
+			close(done)
+		}
+		_, err = p.Run()
 		cancel()
-		lastFetch = sup.LastFetched()
+		<-done // background git commands have stopped before ours runs
+		if sup != nil {
+			lastFetch = sup.LastFetched()
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "gituy:", err)
 			return 1
@@ -120,8 +135,18 @@ func run() int {
 			return 0
 		}
 
-		code, runErr := execGit(*dir, res.Argv)
+		code, runErr := execGit(workDir, res.Argv)
 		activity = append(activity, ui.Activity{At: time.Now(), Argv: res.Argv, Err: runErr})
+		if runErr == nil && !inRepo {
+			// carry on in the repository that was just created
+			if d := createdRepoDir(specs, res.Argv); filepath.IsAbs(d) {
+				workDir = d
+				fmt.Fprintf(os.Stderr, "gituy: now working in %s\n", workDir)
+			} else if d != "" {
+				workDir = filepath.Join(workDir, d)
+				fmt.Fprintf(os.Stderr, "gituy: now working in %s\n", workDir)
+			}
+		}
 		if !cfg.ReturnAfterRun {
 			return code
 		}
@@ -129,6 +154,30 @@ func run() int {
 			return code
 		}
 	}
+}
+
+// createdRepoDir returns the directory a successful init or clone created,
+// relative to where it ran ("" if it was the current directory).
+func createdRepoDir(specs *spec.Set, argv []string) string {
+	c, sel := builder.Match(specs, argv, nil)
+	if d := sel.Args["directory"]; len(d) > 0 {
+		return d[0]
+	}
+	if c.ID == "clone" && len(sel.Args["url"]) > 0 {
+		return cloneDirName(sel.Args["url"][0])
+	}
+	return ""
+}
+
+// cloneDirName mirrors git's default: the last path component of the URL
+// without ".git", e.g. https://host/org/repo.git and host:org/repo -> repo.
+func cloneDirName(url string) string {
+	url = strings.TrimRight(url, "/")
+	url = strings.TrimSuffix(url, "/.git")
+	if i := strings.LastIndexAny(url, "/:"); i >= 0 {
+		url = url[i+1:]
+	}
+	return strings.TrimSuffix(url, ".git")
 }
 
 func checkGit(ctx context.Context, r git.Runner) error {
