@@ -158,6 +158,8 @@ func (h *home) update(m *Model, msg tea.KeyMsg) tea.Cmd {
 		}
 	case "l":
 		m.push(&activityLog{})
+	case "e", ":":
+		m.push(editCommand("git ", nil))
 	case "enter", "right":
 		if it := h.selected(m); it != nil {
 			c, sel := it.command()

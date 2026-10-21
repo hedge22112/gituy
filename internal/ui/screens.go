@@ -14,6 +14,8 @@ type input struct {
 	prompt   string
 	ti       textinput.Model
 	onSubmit func(m *Model, v string) tea.Cmd
+	// live, if set, previews the typed text itself as the command.
+	live bool
 }
 
 func newInput(prompt, value string, onSubmit func(m *Model, v string) tea.Cmd) *input {
@@ -42,6 +44,14 @@ func (in *input) update(m *Model, msg tea.KeyMsg) tea.Cmd {
 }
 
 func (in *input) preview(m *Model) ([]string, []string, string) {
+	if in.live {
+		argv, err := builder.Parse(in.ti.Value())
+		if err != nil {
+			return nil, []string{err.Error()}, ""
+		}
+		c, sel := builder.Match(m.Specs, argv, nil)
+		return argv, nil, builder.Danger(c, sel)
+	}
 	if len(m.stack) >= 2 {
 		if b, ok := m.stack[len(m.stack)-2].(*build); ok {
 			return b.preview(m)

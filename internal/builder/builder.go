@@ -16,6 +16,12 @@ type Selection struct {
 	Flags  map[string]bool     // toggled flags
 	Values map[string]string   // values for flags that take one
 	Args   map[string][]string // positional args by name
+
+	// From a hand-edited command line: flags the spec doesn't know (kept
+	// after the known flags) and positionals that didn't fit an argument
+	// (kept at the end). Both are passed through as typed.
+	Extra    []string
+	Trailing []string
 }
 
 // NewSelection returns a selection with the spec's defaults applied.
@@ -77,6 +83,8 @@ func Build(c *spec.Command, s Selection) (argv []string, problems []string) {
 			}
 		}
 	}
+	problems = append(problems, groupConflicts(c, s)...)
+	argv = append(argv, s.Extra...)
 
 	dashed := false
 	for _, a := range c.Args {
@@ -93,7 +101,26 @@ func Build(c *spec.Command, s Selection) (argv []string, problems []string) {
 		}
 		argv = append(argv, vals...)
 	}
+	argv = append(argv, s.Trailing...)
 	return argv, problems
+}
+
+// groupConflicts reports radio groups with more than one flag on. Toggle
+// prevents this; a hand-edited command line can still do it.
+func groupConflicts(c *spec.Command, s Selection) []string {
+	var problems []string
+	first := map[string]string{}
+	for _, o := range c.Options {
+		if o.Group == "" || !s.Flags[o.Flag] {
+			continue
+		}
+		if f, ok := first[o.Group]; ok {
+			problems = append(problems, fmt.Sprintf("%s can't be used with %s", o.Flag, f))
+			continue
+		}
+		first[o.Group] = o.Flag
+	}
+	return problems
 }
 
 // Danger returns the highest danger level of the command and its
@@ -153,5 +180,7 @@ func (s Selection) Clone() Selection {
 	for k, v := range s.Args {
 		c.Args[k] = append([]string(nil), v...)
 	}
+	c.Extra = append([]string(nil), s.Extra...)
+	c.Trailing = append([]string(nil), s.Trailing...)
 	return c
 }

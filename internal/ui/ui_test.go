@@ -126,3 +126,54 @@ func TestViewRenders(t *testing.T) {
 		}
 	}
 }
+
+func typeText(m *Model, s string) {
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s), Paste: true})
+}
+
+func TestEditCommandUpdatesToggles(t *testing.T) {
+	m := newModel(t, git.State{Branch: "main", HasCommits: true, HeadPushed: true, Upstream: "origin/main", Behind: 2, Remotes: []string{"origin"}})
+	keys(m, "right") // builder for "git pull --ff-only"
+	keys(m, "e")
+	in := m.top().(*input)
+	in.ti.SetValue("git pull --rebase --autostash --weird origin main")
+	if got := preview(m); got != "git pull --rebase --autostash --weird origin main" {
+		t.Fatalf("live preview = %q", got)
+	}
+	keys(m, "enter")
+	b, ok := m.top().(*build)
+	if !ok || len(m.stack) != 2 {
+		t.Fatalf("top = %T, stack depth %d", m.top(), len(m.stack))
+	}
+	if !b.sel.Flags["--rebase"] || !b.sel.Flags["--autostash"] || b.sel.Flags["--ff-only"] {
+		t.Errorf("flags = %v", b.sel.Flags)
+	}
+	if got := preview(m); got != "git pull --rebase --autostash --weird origin main" {
+		t.Errorf("preview = %q", got)
+	}
+	// clearing the pass-through row removes the unknown flag
+	for i, r := range b.rows() {
+		if r.kind == rowExtra {
+			b.cur = i
+		}
+	}
+	keys(m, "x")
+	if got := preview(m); got != "git pull --rebase --autostash origin main" {
+		t.Errorf("after clear = %q", got)
+	}
+}
+
+func TestTypeCommandFromHome(t *testing.T) {
+	m := newModel(t, git.State{Branch: "main", HasCommits: true})
+	keys(m, "e")
+	typeText(m, "branch -D old")
+	keys(m, "enter")
+	b, ok := m.top().(*build)
+	if !ok || b.cmd.ID != "branch-delete" || !b.sel.Flags["-D"] {
+		t.Fatalf("top = %T %+v", m.top(), m.top())
+	}
+	keys(m, "r", "y") // -D can lose work: confirm
+	if strings.Join(m.Result.Argv, " ") != "git branch -D old" {
+		t.Fatalf("result = %v", m.Result.Argv)
+	}
+}

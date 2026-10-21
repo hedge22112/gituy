@@ -348,7 +348,7 @@ func (m *Model) footer() string {
 func (m *Model) hints() string {
 	switch m.top().(type) {
 	case *home:
-		return "↑↓ move · → open · r run · c copy · / filter · f fetch · l log · q quit"
+		return "↑↓ move · → open · r run · c copy · e type a command · / filter · f fetch · l log · q quit"
 	case *build:
 		return "↑↓ move · space toggle · → edit · x clear · r run · c copy · e edit command · ← back"
 	case *picker:

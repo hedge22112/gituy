@@ -24,6 +24,7 @@ type rowKind int
 const (
 	rowOption rowKind = iota
 	rowArg
+	rowExtra
 	rowRun
 )
 
@@ -44,6 +45,9 @@ func (b *build) rows() []row {
 	}
 	for i := range b.cmd.Args {
 		rows = append(rows, row{kind: rowArg, arg: &b.cmd.Args[i]})
+	}
+	if len(b.sel.Extra)+len(b.sel.Trailing) > 0 {
+		rows = append(rows, row{kind: rowExtra})
 	}
 	return append(rows, row{kind: rowRun})
 }
@@ -87,6 +91,9 @@ func (b *build) update(m *Model, msg tea.KeyMsg) tea.Cmd {
 			}
 		case rowArg:
 			b.editArg(m, r.arg)
+		case rowExtra:
+			argv, _, _ := b.preview(m)
+			m.push(editCommand(builder.Quote(argv), b.cmd))
 		case rowRun:
 			return m.run(b.preview(m))
 		}
@@ -97,6 +104,8 @@ func (b *build) update(m *Model, msg tea.KeyMsg) tea.Cmd {
 			delete(b.sel.Flags, r.opt.Flag)
 		case rowArg:
 			delete(b.sel.Args, r.arg.Name)
+		case rowExtra:
+			b.sel.Extra, b.sel.Trailing = nil, nil
 		}
 	case "r":
 		return m.run(b.preview(m))
@@ -105,16 +114,35 @@ func (b *build) update(m *Model, msg tea.KeyMsg) tea.Cmd {
 		m.copy(argv)
 	case "e":
 		argv, _, _ := b.preview(m)
-		m.push(newInput("Edit the command, then press enter to run it", builder.Quote(argv), func(m *Model, v string) tea.Cmd {
-			argv, err := builder.Parse(v)
-			if err != nil {
-				m.setNotice("%v", err)
-				return nil
-			}
-			return m.run(argv, nil, "")
-		}))
+		m.push(editCommand(builder.Quote(argv), b.cmd))
 	}
 	return nil
+}
+
+// editCommand lets the user type or edit a whole command line. On enter
+// the text is parsed back into a command and its toggles, replacing the
+// current builder (or opening one), so the result can be reviewed before
+// running. prefer breaks ties between commands that fit equally well.
+func editCommand(line string, prefer *spec.Command) *input {
+	in := newInput("Edit the command. Enter applies it to the builder", line, func(m *Model, v string) tea.Cmd {
+		argv, err := builder.Parse(v)
+		if err != nil {
+			m.setNotice("%v", err)
+			return nil
+		}
+		c, sel := builder.Match(m.Specs, argv, prefer)
+		m.pop() // the input
+		if _, ok := m.top().(*build); ok {
+			m.pop() // the builder being edited
+		}
+		m.push(newBuild(c, sel, nil))
+		if n := len(sel.Extra) + len(sel.Trailing); n > 0 && c.ID != "custom" {
+			m.setNotice("%d word(s) gituy doesn't know are kept as typed", n)
+		}
+		return nil
+	})
+	in.live = true
+	return in
 }
 
 func (b *build) toggle(m *Model, o *spec.Option) {
@@ -234,6 +262,14 @@ func (b *build) renderRow(r row, selected bool) string {
 			name = stSelected.Render(name)
 		}
 		return cursor(selected) + "    " + name + " " + val + "  " + stMuted.Render(a.Desc)
+	case rowExtra:
+		words := append(append([]string{}, b.sel.Extra...), b.sel.Trailing...)
+		name := fmt.Sprintf("%-26s", "as typed ▸")
+		if selected {
+			name = stSelected.Render(name)
+		}
+		return cursor(selected) + "    " + name + " " + stWarn.Render(builder.Quote(words)) +
+			"  " + stMuted.Render("not recognised; passed through unchanged (x to remove)")
 	default:
 		label := "▶ Run"
 		if selected {
